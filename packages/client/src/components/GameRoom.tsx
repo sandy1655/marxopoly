@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { leaveRoom, useStore } from '../net.js';
 import Board from './Board.js';
 import PlayerList from './PlayerList.js';
+import Properties from './Properties.js';
 import ActionBar from './ActionBar.js';
 import LogPanel from './LogPanel.js';
 import ManagePanel from './ManagePanel.js';
@@ -34,6 +35,7 @@ export default function GameRoom() {
       <main className="game-main">
         <aside className="col left">
           <PlayerList state={state} myId={myId} onTrade={(id) => setTradeWith(id)} />
+          <Properties state={state} myId={myId} />
           {myId && <TradeInbox state={state} myId={myId} />}
         </aside>
 

@@ -319,6 +319,30 @@ p { margin: 0 0 10px; }
 .deed-dot { width: 15px; height: 9px; border-radius: 3px; border: 1px solid rgba(0, 0, 0, 0.15); }
 .deed-dot.mtg { opacity: 0.3; }
 
+/* ================================================================= deeds */
+.deeds-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+.deeds-head h2 { margin: 0; }
+.deeds-tabs { margin: 0; flex: none; }
+.deeds-tabs button { padding: 4px 10px; font-size: 12px; }
+.deeds-groups { display: flex; flex-direction: column; gap: 12px; }
+.deed-group { display: flex; flex-direction: column; gap: 4px; }
+.deed-group-head { display: flex; align-items: center; gap: 7px; margin-bottom: 2px; }
+.deed-group-band { width: 11px; height: 11px; border-radius: 3px; border: 1px solid rgba(0, 0, 0, 0.15); flex: none; }
+.deed-group-name { font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); font-weight: 750; }
+.deed-item {
+  display: flex; align-items: center; gap: 9px;
+  background: var(--panel-2); border: 2px solid transparent; border-radius: 10px;
+  padding: 6px 10px; font-size: 13px;
+}
+.deed-item.mine { border-color: var(--accent); background: var(--accent-soft); }
+.deed-item.mtg { opacity: 0.55; }
+.deed-item-band { width: 5px; align-self: stretch; border-radius: 3px; flex: none; }
+.deed-item-name { flex: 1; display: flex; align-items: center; gap: 7px; font-weight: 650; }
+.deed-item-houses { font-size: 11px; color: var(--accent); font-weight: 750; }
+.deed-item-flag { font-size: 10px; font-weight: 800; letter-spacing: 0.5px; color: var(--warn); }
+.deed-item-owner { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; font-weight: 600; white-space: nowrap; }
+.deed-item-owner .accent { color: #15803d; font-weight: 750; }
+
 /* ============================================================ action bar */
 .actionbar {
   background: #fff; border: 2px solid var(--line);
