@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { addBot, kickPlayer, leaveRoom, send, updateSettings, useStore } from '../net.js';
-import type { GameSettings } from '@rentier/shared';
+import type { GameSettings } from '@marxopoly/shared';
 import { playerIcon } from '../lib.js';
 import CardsPanel from './CardsPanel.js';
 

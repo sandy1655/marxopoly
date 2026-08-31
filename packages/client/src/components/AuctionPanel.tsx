@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { tileAt, tileLabel, type GameState } from '@rentier/shared';
+import { tileAt, tileLabel, type GameState } from '@marxopoly/shared';
 import { send } from '../net.js';
 import { money, secondsLeft, tileColor } from '../lib.js';
 

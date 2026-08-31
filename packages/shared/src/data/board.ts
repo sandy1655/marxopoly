@@ -1,7 +1,7 @@
 import type { ColorGroup, RentLadder, Tile } from '../types.js';
 
 /**
- * The Rentier board: 40 tiles running clockwise from Start (index 0).
+ * The Marxopoly board: 40 tiles running clockwise from Start (index 0).
  * Streets, depots and works are the ownable tiles.
  */
 

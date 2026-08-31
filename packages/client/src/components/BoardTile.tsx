@@ -1,4 +1,4 @@
-import { type Deed, type GameState, type Tile } from '@rentier/shared';
+import { type Deed, type GameState, type Tile } from '@marxopoly/shared';
 import { gridPosition, money, tileColor, tileEdge } from '../lib.js';
 
 interface Props {

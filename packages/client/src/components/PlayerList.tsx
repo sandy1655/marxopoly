@@ -1,4 +1,4 @@
-import { netWorth, ownedTileIds, tileAt, tileLabel, type GameState } from '@rentier/shared';
+import { netWorth, ownedTileIds, tileAt, tileLabel, type GameState } from '@marxopoly/shared';
 import { money, playerIcon, tileColor } from '../lib.js';
 
 interface Props {

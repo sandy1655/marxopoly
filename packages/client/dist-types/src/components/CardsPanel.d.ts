@@ -1,4 +1,4 @@
-import { type GameState } from '@rentier/shared';
+import { type GameState } from '@marxopoly/shared';
 interface Props {
     state: GameState;
     /** The host, in the lobby, can add/delete cards and rename tiles. */

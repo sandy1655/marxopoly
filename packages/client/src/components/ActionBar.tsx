@@ -6,7 +6,7 @@ import {
   liquidValue,
   ownableTile,
   type GameState,
-} from '@rentier/shared';
+} from '@marxopoly/shared';
 import { send } from '../net.js';
 import { money, phaseLabel, secondsLeft } from '../lib.js';
 

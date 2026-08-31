@@ -1,5 +1,5 @@
 services:
-  rentier:
+  marxopoly:
     build: .
     ports:
       - "3001:3001"

@@ -1,9 +1,9 @@
-# Rentier
+# Marxopoly
 
 A real-time, multiplayer property-trading board game for the browser. Create a table, share the
 five-character code, and play with two to eight people — or fill the empty seats with bots.
 
-Rentier is an original game with its own board, its own card decks and its own rules engine. It is
+Marxopoly is an original game with its own board, its own card decks and its own rules engine. It is
 not affiliated with, endorsed by, or derived from any commercial board game or its publisher.
 
 ---
@@ -48,7 +48,7 @@ whatever state the server broadcasts. Every rule lives in one place.
 
 ```bash
 pnpm install
-pnpm --filter @rentier/shared build   # the client and server consume its dist output
+pnpm --filter @marxopoly/shared build   # the client and server consume its dist output
 pnpm dev                              # server on :3001, client on :5173
 ```
 
@@ -139,7 +139,7 @@ corners, and seven card tiles.
 ## How the engine works
 
 ```ts
-import { applyAction, createGame } from '@rentier/shared';
+import { applyAction, createGame } from '@marxopoly/shared';
 
 let state = createGame('room-1', [{ id: 'a', name: 'Ada' }, { id: 'b', name: 'Brix' }]);
 const result = applyAction(state, { playerId: 'a', action: { type: 'start_game' }, now: Date.now() });

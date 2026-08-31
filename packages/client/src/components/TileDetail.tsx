@@ -6,7 +6,7 @@ import {
   ownableTile,
   tileLabel,
   type GameState,
-} from '@rentier/shared';
+} from '@marxopoly/shared';
 import { money, tileColor } from '../lib.js';
 
 interface Props {

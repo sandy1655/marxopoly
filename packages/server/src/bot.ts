@@ -13,7 +13,7 @@ import {
   ownsWholeGroup,
   type GameAction,
   type GameState,
-} from '@rentier/shared';
+} from '@marxopoly/shared';
 
 /**
  * A deliberately simple heuristic opponent. It is not trying to be strong —

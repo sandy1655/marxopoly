@@ -1,4 +1,4 @@
-import { type ChatMessage, type GameAction, type GameSettings, type GameState, type RoomSummary } from '@rentier/shared';
+import { type ChatMessage, type GameAction, type GameSettings, type GameState, type RoomSummary } from '@marxopoly/shared';
 export interface Room {
     id: string;
     name: string;

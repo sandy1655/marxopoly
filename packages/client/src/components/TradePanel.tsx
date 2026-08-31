@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ownableTile, ownedTileIds, tileLabel, type GameState, type TradeSide } from '@rentier/shared';
+import { ownableTile, ownedTileIds, tileLabel, type GameState, type TradeSide } from '@marxopoly/shared';
 import { send } from '../net.js';
 import { money, tileColor } from '../lib.js';
 

@@ -9,7 +9,7 @@ import type {
   GameState,
   RoomSummary,
   ServerToClientEvents,
-} from '@rentier/shared';
+} from '@marxopoly/shared';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL ?? '';
 
@@ -20,9 +20,9 @@ const SERVER_URL = import.meta.env.VITE_SERVER_URL ?? '';
  * as a different player. With localStorage the second tab would silently
  * reconnect as the first tab's player and knock it offline.
  */
-const SESSION_KEY = 'rentier.session.v1';
+const SESSION_KEY = 'marxopoly.session.v1';
 /** The display name is a convenience, so it is fine to share across tabs. */
-const NAME_KEY = 'rentier.name.v1';
+const NAME_KEY = 'marxopoly.name.v1';
 
 export interface StoredSession {
   roomId: string;

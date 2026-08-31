@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { BOARD, tileLabel, type GameState } from '@rentier/shared';
+import { BOARD, tileLabel, type GameState } from '@marxopoly/shared';
 import { removeCard, renameTile } from '../net.js';
 import { describeCardEffect } from '../lib.js';
 import CardEditor from './CardEditor.js';

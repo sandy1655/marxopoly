@@ -1,10 +1,11 @@
-import type { GameState } from '@rentier/shared';
+import type { GameState } from '@marxopoly/shared';
 interface Props {
     state: GameState;
 }
 /**
  * Player pieces drawn on a layer over the board so they can walk tile by tile
- * when a player's position changes, instead of jumping.
+ * when a player's position changes, instead of jumping. A move that follows a
+ * dice roll waits for the dice animation to finish before the piece sets off.
  */
 export default function TokenLayer({ state }: Props): import("react").JSX.Element;
 export {};

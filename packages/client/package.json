@@ -1,5 +1,5 @@
 {
-  "name": "@rentier/client",
+  "name": "@marxopoly/client",
   "version": "1.0.0",
   "private": true,
   "type": "module",
@@ -10,7 +10,7 @@
     "typecheck": "tsc -b --force"
   },
   "dependencies": {
-    "@rentier/shared": "workspace:*",
+    "@marxopoly/shared": "workspace:*",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "socket.io-client": "^4.8.1"

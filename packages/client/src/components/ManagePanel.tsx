@@ -8,7 +8,7 @@ import {
   tileLabel,
   unmortgageCost,
   type GameState,
-} from '@rentier/shared';
+} from '@marxopoly/shared';
 import { send } from '../net.js';
 import { money, tileColor } from '../lib.js';
 

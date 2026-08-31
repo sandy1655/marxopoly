@@ -1,5 +1,5 @@
 {
-  "name": "@rentier/server",
+  "name": "@marxopoly/server",
   "version": "1.0.0",
   "private": true,
   "type": "module",
@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "@ngrok/ngrok": "^1.7.0",
-    "@rentier/shared": "workspace:*",
+    "@marxopoly/shared": "workspace:*",
     "compression": "^1.7.5",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",

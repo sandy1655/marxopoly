@@ -1,4 +1,4 @@
-import type { GameState } from '@rentier/shared';
+import type { GameState } from '@marxopoly/shared';
 interface Props {
     state: GameState;
 }

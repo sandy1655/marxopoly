@@ -1,4 +1,4 @@
-import { BOARD, type GameState } from '@rentier/shared';
+import { BOARD, type GameState } from '@marxopoly/shared';
 import BoardTile from './BoardTile.js';
 import TokenLayer from './TokenLayer.js';
 import { money } from '../lib.js';
@@ -32,7 +32,7 @@ export default function Board({ state, selected, onSelect }: Props) {
 
         <div className="board-centre">
           <div className="brand">
-            Rentier<span className="dot" />
+            Marxopoly<span className="dot" />
           </div>
           <Dice dice={state.dice} />
           {current && (

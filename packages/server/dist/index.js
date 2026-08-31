@@ -347,7 +347,7 @@ httpServer.listen(config.port, () => {
         `http://localhost:${config.port}`,
         ...lanAddresses().map((ip) => `http://${ip}:${config.port}`),
     ];
-    banner(['Rentier server is running', '', ...urls.map((u) => `    ${u}`)]);
+    banner(['Marxopoly server is running', '', ...urls.map((u) => `    ${u}`)]);
     if (config.share) {
         void openTunnel();
     }

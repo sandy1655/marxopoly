@@ -1,4 +1,4 @@
-import type { NetWorthSnapshot, Player } from '@rentier/shared';
+import type { NetWorthSnapshot, Player } from '@marxopoly/shared';
 import { compactMoney, money } from '../lib.js';
 
 interface Props {

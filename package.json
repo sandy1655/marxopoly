@@ -1,18 +1,18 @@
 {
-  "name": "rentier",
+  "name": "marxopoly",
   "version": "1.0.0",
   "private": true,
-  "description": "Rentier — a real-time multiplayer property trading board game for the browser.",
+  "description": "Marxopoly — a real-time multiplayer property trading board game for the browser.",
   "license": "MIT",
   "packageManager": "pnpm@10.28.0",
   "engines": { "node": ">=20" },
   "scripts": {
     "dev": "pnpm --parallel --filter \"./packages/*\" dev",
-    "build": "pnpm --filter @rentier/shared build && pnpm --filter @rentier/server build && pnpm --filter @rentier/client build",
-    "start": "pnpm --filter @rentier/server start",
-    "share": "pnpm --filter @rentier/shared build && pnpm --filter @rentier/client build && pnpm --filter @rentier/server share",
+    "build": "pnpm --filter @marxopoly/shared build && pnpm --filter @marxopoly/server build && pnpm --filter @marxopoly/client build",
+    "start": "pnpm --filter @marxopoly/server start",
+    "share": "pnpm --filter @marxopoly/shared build && pnpm --filter @marxopoly/client build && pnpm --filter @marxopoly/server share",
     "typecheck": "pnpm -r typecheck",
-    "test": "pnpm --filter @rentier/shared test",
+    "test": "pnpm --filter @marxopoly/shared test",
     "clean": "rm -rf packages/*/dist packages/*/tsconfig.tsbuildinfo node_modules packages/*/node_modules"
   },
   "devDependencies": {

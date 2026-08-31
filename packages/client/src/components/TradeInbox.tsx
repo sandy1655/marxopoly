@@ -1,4 +1,4 @@
-import { tileLabel, type GameState, type TradeSide } from '@rentier/shared';
+import { tileLabel, type GameState, type TradeSide } from '@marxopoly/shared';
 import { send } from '../net.js';
 import { money } from '../lib.js';
 

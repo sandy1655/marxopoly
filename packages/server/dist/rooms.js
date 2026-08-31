@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { addCard, addPlayerToLobby, applyAction, applySettings, createGame, currentPlayer, makeCard, removeCard, removePlayerFromLobby, renameTile, sanitizeCardInput, } from '@rentier/shared';
+import { addCard, addPlayerToLobby, applyAction, applySettings, createGame, currentPlayer, makeCard, removeCard, removePlayerFromLobby, renameTile, sanitizeCardInput, } from '@marxopoly/shared';
 import { config } from './config.js';
 import { decideBotAction } from './bot.js';
 const BOT_NAMES = ['Mira', 'Oslo', 'Pike', 'Junot', 'Wren', 'Cass', 'Bly', 'Nero'];

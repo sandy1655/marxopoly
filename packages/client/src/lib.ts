@@ -6,7 +6,7 @@ import {
   type GameState,
   type Player,
   type Tile,
-} from '@rentier/shared';
+} from '@marxopoly/shared';
 
 export function money(value: number): string {
   return `$${Math.round(value).toLocaleString('en-US')}`;
@@ -88,7 +88,7 @@ export function initial(name: string): string {
   return (name.trim()[0] ?? '?').toUpperCase();
 }
 
-/** One emoji per seat token (see TOKENS in @rentier/shared). */
+/** One emoji per seat token (see TOKENS in @marxopoly/shared). */
 export const TOKEN_EMOJI: Record<string, string> = {
   rocket: '🚀',
   anchor: '⚓',

@@ -39,7 +39,7 @@ index e1fd3cc..8840bdc 100644
  - **Turn timers** — configurable, with sensible auto-resolution when they expire.
  - **Bots** — heuristic opponents that buy, build, bid and answer trades.
  - **Deterministic** — the whole game runs off one seed, so a game replays identically.
-@@ -43,8 +46,13 @@ pnpm --filter @rentier/shared build   # the client and server consume its dist o
+@@ -43,8 +46,13 @@ pnpm --filter @marxopoly/shared build   # the client and server consume its dist o
  pnpm dev                              # server on :3001, client on :5173
  ```
  
@@ -113,7 +113,7 @@ index 63af8d3..2fc8a79 100644
 --- a/packages/client/src/components/BoardTile.tsx
 +++ b/packages/client/src/components/BoardTile.tsx
 @@ -1,5 +1,5 @@
- import { type Deed, type GameState, type Tile } from '@rentier/shared';
+ import { type Deed, type GameState, type Tile } from '@marxopoly/shared';
 -import { TOKEN_GLYPHS, gridPosition, money, playersOn, tileColor, tileEdge } from '../lib.js';
 +import { gridPosition, initial, money, playersOn, tileColor, tileEdge } from '../lib.js';
  
@@ -253,7 +253,7 @@ index fe8401d..66356c5 100644
 +++ b/packages/client/src/components/GameOver.tsx
 @@ -1,6 +1,6 @@
  import { leaveRoom } from '../net.js';
- import { netWorth, type GameState } from '@rentier/shared';
+ import { netWorth, type GameState } from '@marxopoly/shared';
 -import { TOKEN_GLYPHS, money } from '../lib.js';
 +import { initial, money } from '../lib.js';
  
@@ -290,7 +290,7 @@ index e3aef05..97fbec7 100644
 +++ b/packages/client/src/components/Lobby.tsx
 @@ -1,6 +1,6 @@
  import { addBot, kickPlayer, leaveRoom, send, updateSettings, useStore } from '../net.js';
- import type { GameSettings } from '@rentier/shared';
+ import type { GameSettings } from '@marxopoly/shared';
 -import { TOKEN_GLYPHS } from '../lib.js';
 +import { initial } from '../lib.js';
  
@@ -310,7 +310,7 @@ index bf32dab..c5baf0a 100644
 --- a/packages/client/src/components/PlayerList.tsx
 +++ b/packages/client/src/components/PlayerList.tsx
 @@ -1,5 +1,5 @@
- import { netWorth, ownedTileIds, tileAt, type GameState } from '@rentier/shared';
+ import { netWorth, ownedTileIds, tileAt, type GameState } from '@marxopoly/shared';
 -import { TOKEN_GLYPHS, money, tileColor } from '../lib.js';
 +import { initial, money, tileColor } from '../lib.js';
  
@@ -359,10 +359,10 @@ index bea9f72..cdc8f7f 100644
 --- a/packages/client/src/net.ts
 +++ b/packages/client/src/net.ts
 @@ -11,7 +11,17 @@ import type {
- } from '@rentier/shared';
+ } from '@marxopoly/shared';
  
  const SERVER_URL = import.meta.env.VITE_SERVER_URL ?? '';
--const STORAGE_KEY = 'rentier.session.v1';
+-const STORAGE_KEY = 'marxopoly.session.v1';
 +
 +/**
 + * The seat token lives in sessionStorage, NOT localStorage, and this matters:
@@ -371,9 +371,9 @@ index bea9f72..cdc8f7f 100644
 + * as a different player. With localStorage the second tab would silently
 + * reconnect as the first tab's player and knock it offline.
 + */
-+const SESSION_KEY = 'rentier.session.v1';
++const SESSION_KEY = 'marxopoly.session.v1';
 +/** The display name is a convenience, so it is fine to share across tabs. */
-+const NAME_KEY = 'rentier.name.v1';
++const NAME_KEY = 'marxopoly.name.v1';
  
  export interface StoredSession {
    roomId: string;

@@ -1,5 +1,5 @@
 /**
- * The Rentier board: 40 tiles running clockwise from Start (index 0).
+ * The Marxopoly board: 40 tiles running clockwise from Start (index 0).
  * Streets, depots and works are the ownable tiles.
  */
 const street = (id, name, short, group, price, rent, buildCost) => ({ id, name, short, kind: 'street', group, price, rent, buildCost });

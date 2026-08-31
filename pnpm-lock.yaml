@@ -14,7 +14,7 @@ importers:
 
   packages/client:
     dependencies:
-      '@rentier/shared':
+      '@marxopoly/shared':
         specifier: workspace:*
         version: link:../shared
       react:
@@ -48,7 +48,7 @@ importers:
       '@ngrok/ngrok':
         specifier: ^1.7.0
         version: 1.7.0
-      '@rentier/shared':
+      '@marxopoly/shared':
         specifier: workspace:*
         version: link:../shared
       compression:

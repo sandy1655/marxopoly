@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react';
 
 export type Theme = 'dark' | 'light';
 
-const STORAGE_KEY = 'rentier.theme.v1';
+const STORAGE_KEY = 'marxopoly.theme.v1';
 const listeners = new Set<() => void>();
 
 export function getTheme(): Theme {

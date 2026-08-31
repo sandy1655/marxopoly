@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { GameState } from '@rentier/shared';
+import type { GameState } from '@marxopoly/shared';
 import { sendChat, useStore } from '../net.js';
 
 interface Props {

@@ -6,7 +6,7 @@ import {
   type CardEffect,
   type CardEffectKind,
   type GameState,
-} from '@rentier/shared';
+} from '@marxopoly/shared';
 import { addCard } from '../net.js';
 import { describeCardEffect } from '../lib.js';
 

@@ -16,7 +16,7 @@ import {
   type GameSettings,
   type GameState,
   type RoomSummary,
-} from '@rentier/shared';
+} from '@marxopoly/shared';
 import { config } from './config.js';
 import { decideBotAction } from './bot.js';
 

@@ -1,4 +1,4 @@
-import { BOARD, GROUP_TILES, canBuild, canMortgage, canSellBuilding, countOwnedInGroup, currentPlayer, getPlayer, liquidValue, ownableTile, ownedTileIds, ownsWholeGroup, } from '@rentier/shared';
+import { BOARD, GROUP_TILES, canBuild, canMortgage, canSellBuilding, countOwnedInGroup, currentPlayer, getPlayer, liquidValue, ownableTile, ownedTileIds, ownsWholeGroup, } from '@marxopoly/shared';
 /**
  * A deliberately simple heuristic opponent. It is not trying to be strong —
  * it is trying to keep a table moving when seats are empty.

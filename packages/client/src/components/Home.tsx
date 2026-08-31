@@ -15,7 +15,7 @@ export default function Home() {
     <div className="home">
       <header className="home-head">
         <h1>
-          Rentier<span className="dot" />
+          Marxopoly<span className="dot" />
         </h1>
         <p>Buy the block, build it up, and bankrupt your friends. Two to eight players, live in the browser.</p>
       </header>
@@ -106,7 +106,7 @@ export default function Home() {
 
       <footer className="home-foot">
         <p className="muted">
-          Rentier is an original game. It is not affiliated with, endorsed by, or derived from any commercial
+          Marxopoly is an original game. It is not affiliated with, endorsed by, or derived from any commercial
           board game or its publisher.
         </p>
       </footer>

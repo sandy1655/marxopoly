@@ -43,7 +43,7 @@ export default function GameRoom() {
     <div className="game">
       <header className="game-head">
         <div className="brand small">
-          Rentier<span className="dot" />
+          Marxopoly<span className="dot" />
         </div>
         <span className="code-chip">{roomId}</span>
         {spectating && <span className="tag you">Watching</span>}

@@ -1,5 +1,5 @@
 import { leaveRoom } from '../net.js';
-import { netWorth, type GameState, type Player } from '@rentier/shared';
+import { netWorth, type GameState, type Player } from '@marxopoly/shared';
 import { compactMoney, money, playerIcon } from '../lib.js';
 import NetWorthChart from './NetWorthChart.js';
 

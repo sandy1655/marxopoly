@@ -7,7 +7,7 @@ import {
   ownsWholeGroup,
   tileLabel,
   type GameState,
-} from '@rentier/shared';
+} from '@marxopoly/shared';
 
 interface Props {
   state: GameState;
