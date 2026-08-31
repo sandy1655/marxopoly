@@ -5,6 +5,7 @@ import {
   mortgageValue,
   ownableTile,
   ownedTileIds,
+  tileLabel,
   unmortgageCost,
   type GameState,
 } from '@rentier/shared';
@@ -45,7 +46,7 @@ export default function ManagePanel({ state, myId, onClose }: Props) {
               <div key={id} className="manage-row">
                 <span className="manage-band" style={{ background: tileColor(tile) ?? '#475569' }} />
                 <div className="manage-info">
-                  <strong>{tile.name}</strong>
+                  <strong>{tileLabel(state, id)}</strong>
                   <span className="muted small">
                     {deed.mortgaged
                       ? 'Mortgaged'

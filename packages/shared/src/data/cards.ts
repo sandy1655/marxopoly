@@ -1,5 +1,5 @@
-import { tileIdByName } from './board.js';
-import type { Card, CardEffect } from '../types.js';
+import { BOARD_SIZE, tileIdByName } from './board.js';
+import type { Card, CardEffect, CardInput } from '../types.js';
 
 /**
  * The two card decks — Fortune and Ledger.
@@ -142,6 +142,9 @@ export const LEDGER_CARDS: readonly Card[] = buildDeck('ledger', [
 
 export const ALL_CARDS: readonly Card[] = [...FORTUNE_CARDS, ...LEDGER_CARDS];
 
+/** The default deck contents a fresh game starts with (mutable copy). */
+export const DEFAULT_CARDS: readonly Card[] = ALL_CARDS;
+
 // Fail fast on a copy-paste slip rather than silently dropping a card.
 assertUniqueIds(ALL_CARDS);
 
@@ -159,4 +162,71 @@ export function cardById(id: string): Card {
   const found = CARD_INDEX.get(id);
   if (!found) throw new Error(`Unknown card ${id}`);
   return found;
+}
+
+// ---------------------------------------------------------------------------
+// Validation — for host-authored cards coming off the wire
+// ---------------------------------------------------------------------------
+
+const CARD_MAX_TEXT = 240;
+const num = (v: unknown): number | null =>
+  typeof v === 'number' && Number.isFinite(v) ? Math.round(v) : null;
+const clampAmount = (n: number): number => Math.max(-100_000, Math.min(100_000, n));
+
+/** Turn an untrusted `{ deck, text, effect }` payload into a clean effect, or
+ *  return an error string. Keeps every custom card safe for the engine. */
+export function sanitizeCardEffect(raw: unknown): CardEffect | string {
+  if (!raw || typeof raw !== 'object') return 'Missing effect.';
+  const e = raw as Record<string, unknown>;
+  switch (e.kind) {
+    case 'cash':
+    case 'collect_each':
+    case 'pay_each': {
+      const amount = num(e.amount);
+      if (amount === null) return 'Amount must be a number.';
+      if (e.kind !== 'cash' && amount < 0) return 'Amount must be positive.';
+      return { kind: e.kind, amount: clampAmount(amount) };
+    }
+    case 'move_to': {
+      const tile = num(e.tile);
+      if (tile === null || tile < 0 || tile >= BOARD_SIZE) return 'Pick a destination tile.';
+      return { kind: 'move_to', tile, collectStart: e.collectStart !== false };
+    }
+    case 'move_by': {
+      const steps = num(e.steps);
+      if (steps === null || steps === 0 || Math.abs(steps) > 39) return 'Steps must be between -39 and 39.';
+      return { kind: 'move_by', steps };
+    }
+    case 'advance_nearest': {
+      if (e.target !== 'depot' && e.target !== 'works') return 'Target must be depot or works.';
+      const multiplier = num(e.multiplier);
+      if (multiplier === null || multiplier < 1 || multiplier > 50) return 'Multiplier must be 1–50.';
+      return { kind: 'advance_nearest', target: e.target, multiplier };
+    }
+    case 'goto_holding':
+      return { kind: 'goto_holding' };
+    case 'reprieve':
+      return { kind: 'reprieve' };
+    case 'assessment': {
+      const perHouse = num(e.perHouse);
+      const perHotel = num(e.perHotel);
+      if (perHouse === null || perHotel === null || perHouse < 0 || perHotel < 0) {
+        return 'House and hotel charges must be positive numbers.';
+      }
+      return { kind: 'assessment', perHouse: clampAmount(perHouse), perHotel: clampAmount(perHotel) };
+    }
+    default:
+      return 'Unknown effect type.';
+  }
+}
+
+export function sanitizeCardInput(raw: unknown): CardInput | string {
+  if (!raw || typeof raw !== 'object') return 'Missing card.';
+  const r = raw as Record<string, unknown>;
+  if (r.deck !== 'fortune' && r.deck !== 'ledger') return 'Deck must be Fortune or Ledger.';
+  const text = typeof r.text === 'string' ? r.text.trim().replace(/\s+/g, ' ') : '';
+  if (!text) return 'The card needs some text.';
+  const effect = sanitizeCardEffect(r.effect);
+  if (typeof effect === 'string') return effect;
+  return { deck: r.deck, text: text.slice(0, CARD_MAX_TEXT), effect };
 }

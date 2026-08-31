@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { addPlayerToLobby, applyAction, applySettings, createGame, currentPlayer, removePlayerFromLobby, } from '@rentier/shared';
+import { addCard, addPlayerToLobby, applyAction, applySettings, createGame, currentPlayer, makeCard, removeCard, removePlayerFromLobby, renameTile, sanitizeCardInput, } from '@rentier/shared';
 import { config } from './config.js';
 import { decideBotAction } from './bot.js';
 const BOT_NAMES = ['Mira', 'Oslo', 'Pike', 'Junot', 'Wren', 'Cass', 'Bly', 'Nero'];
@@ -36,13 +36,15 @@ export class RoomManager {
     }
     list() {
         return [...this.rooms.values()]
-            .filter((r) => !r.isPrivate)
+            // A finished game drops off the board — nothing left to join or watch.
+            .filter((r) => !r.isPrivate && r.state.phase !== 'game_over')
             .map((r) => ({
             id: r.id,
             name: r.name,
             hostId: r.hostId,
             playerCount: r.state.players.filter((p) => !p.bankrupt).length,
             maxPlayers: r.state.settings.maxPlayers,
+            spectatorCount: r.spectators,
             phase: r.state.phase,
             isPrivate: r.isPrivate,
             createdAt: r.createdAt,
@@ -71,6 +73,7 @@ export class RoomManager {
             tokens: new Map([[playerId, token]]),
             sockets: new Map(),
             chat: [],
+            spectators: 0,
             dropTimers: new Map(),
             botTimer: null,
             lastActivity: Date.now(),
@@ -102,8 +105,13 @@ export class RoomManager {
                     : { ok: true, room, playerId, token };
             }
         }
-        if (room.state.phase !== 'lobby')
-            return { ok: false, error: 'That game is already under way.' };
+        // A game already under way has no seats to give — join as a viewer instead.
+        if (room.state.phase !== 'lobby') {
+            room.spectators += 1;
+            room.lastActivity = Date.now();
+            this.emit(room);
+            return { ok: true, room, spectator: true };
+        }
         if (room.state.players.length >= room.state.settings.maxPlayers) {
             return { ok: false, error: 'That table is full.' };
         }
@@ -151,6 +159,39 @@ export class RoomManager {
         this.emit(room);
         return null;
     }
+    renameTile(room, requesterId, tileId, name) {
+        if (room.hostId !== requesterId)
+            return 'Only the host can rename tiles.';
+        if (room.state.phase !== 'lobby')
+            return 'The board is locked once the game starts.';
+        room.state = renameTile(room.state, tileId, name);
+        this.emit(room);
+        return null;
+    }
+    addCard(room, requesterId, input) {
+        if (room.hostId !== requesterId)
+            return 'Only the host can add cards.';
+        if (room.state.phase !== 'lobby')
+            return 'Cards are locked once the game starts.';
+        const clean = sanitizeCardInput(input);
+        if (typeof clean === 'string')
+            return clean;
+        room.state = addCard(room.state, makeCard(clean, `c-${randomUUID().slice(0, 8)}`));
+        this.emit(room);
+        return null;
+    }
+    removeCard(room, requesterId, cardId) {
+        if (room.hostId !== requesterId)
+            return 'Only the host can remove cards.';
+        if (room.state.phase !== 'lobby')
+            return 'Cards are locked once the game starts.';
+        const before = room.state.cards.length;
+        room.state = removeCard(room.state, cardId);
+        if (room.state.cards.length === before)
+            return 'A deck must keep at least one card.';
+        this.emit(room);
+        return null;
+    }
     leave(room, playerId) {
         room.sockets.delete(playerId);
         if (room.state.phase === 'lobby') {
@@ -167,7 +208,27 @@ export class RoomManager {
                 this.emit(room);
             return;
         }
-        this.dispatchInternal(room, playerId, { type: 'set_connected', playerId, connected: false });
+        // Explicitly leaving a game in progress is a forfeit: the engine hands the
+        // player's properties back to the bank (no houses, buyable again), zeroes
+        // their cash, and ends the game if only one player is left standing.
+        const timer = room.dropTimers.get(playerId);
+        if (timer) {
+            clearTimeout(timer);
+            room.dropTimers.delete(playerId);
+        }
+        room.tokens.delete(playerId);
+        if (room.state.phase !== 'game_over') {
+            this.dispatchInternal(room, playerId, { type: 'resign' });
+        }
+        else {
+            this.emit(room);
+        }
+    }
+    /** A viewer closed the tab or left; just drop the head count. */
+    leaveSpectator(room) {
+        room.spectators = Math.max(0, room.spectators - 1);
+        room.lastActivity = Date.now();
+        this.emit(room);
     }
     /** Called when a socket drops; the seat is held open for the grace period. */
     markDisconnected(room, playerId) {
@@ -192,7 +253,9 @@ export class RoomManager {
     // -------------------------------------------------------------------------
     // Gameplay
     // -------------------------------------------------------------------------
-    dispatch(room, playerId, action) {
+    dispatch(room, playerId, action, spectator = false) {
+        if (spectator)
+            return 'Viewers cannot take actions.';
         // Players may never inject engine-internal actions.
         if (action.type === 'set_connected' || action.type === 'timeout') {
             return 'Not allowed.';
@@ -236,7 +299,9 @@ export class RoomManager {
     tick() {
         const now = Date.now();
         for (const room of [...this.rooms.values()]) {
-            if (room.sockets.size === 0 && now - room.lastActivity > config.emptyRoomTtlMs) {
+            if (room.sockets.size === 0 &&
+                room.spectators === 0 &&
+                now - room.lastActivity > config.emptyRoomTtlMs) {
                 this.destroy(room.id);
                 continue;
             }

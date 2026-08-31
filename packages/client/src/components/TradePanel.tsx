@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ownableTile, ownedTileIds, type GameState, type TradeSide } from '@rentier/shared';
+import { ownableTile, ownedTileIds, tileLabel, type GameState, type TradeSide } from '@rentier/shared';
 import { send } from '../net.js';
 import { money, tileColor } from '../lib.js';
 
@@ -153,7 +153,7 @@ function TradeColumn({
               title={deed.houses > 0 ? 'Sell the buildings before trading this' : undefined}
             >
               <span className="dot" style={{ background: tileColor(tile) ?? '#475569' }} />
-              {tile.name}
+              {tileLabel(state, id)}
               {deed.mortgaged && <span className="tag">mtg</span>}
             </button>
           );

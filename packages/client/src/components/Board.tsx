@@ -1,4 +1,4 @@
-import { ALL_CARDS, BOARD, type GameState } from '@rentier/shared';
+import { BOARD, type GameState } from '@rentier/shared';
 import BoardTile from './BoardTile.js';
 import TokenLayer from './TokenLayer.js';
 import { money } from '../lib.js';
@@ -10,11 +10,10 @@ interface Props {
   onSelect: (tileId: number) => void;
 }
 
-const CARD_TEXT = new Map(ALL_CARDS.map((c) => [c.id, c.text]));
-
 export default function Board({ state, selected, onSelect }: Props) {
   const current = state.players.find((p) => p.seat === state.turnSeat && !p.bankrupt);
   const card = state.drawnCard;
+  const cardText = card ? state.cards.find((c) => c.id === card.cardId)?.text ?? '' : '';
 
   return (
     <div className="board-wrap">
@@ -48,7 +47,7 @@ export default function Board({ state, selected, onSelect }: Props) {
           {card && (
             <div className={`centre-card ${card.deck}`}>
               <span className="deck-label">{card.deck === 'fortune' ? 'Fortune' : 'Ledger'}</span>
-              {CARD_TEXT.get(card.cardId) ?? ''}
+              {cardText}
             </div>
           )}
         </div>

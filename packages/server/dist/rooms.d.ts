@@ -11,6 +11,8 @@ export interface Room {
     /** playerId -> socket id, only for connected players. */
     sockets: Map<string, string>;
     chat: ChatMessage[];
+    /** Sockets watching without a seat. Kept only for the lobby listing count. */
+    spectators: number;
     /** playerId -> timer that forfeits the seat if they never come back. */
     dropTimers: Map<string, NodeJS.Timeout>;
     botTimer: NodeJS.Timeout | null;
@@ -44,16 +46,25 @@ export declare class RoomManager {
         token: string;
         displacedSocketId?: string;
     } | {
+        ok: true;
+        room: Room;
+        spectator: true;
+    } | {
         ok: false;
         error: string;
     };
     addBot(room: Room, requesterId: string): string | null;
     kick(room: Room, requesterId: string, targetId: string): string | null;
     updateSettings(room: Room, requesterId: string, settings: Partial<GameSettings>): string | null;
+    renameTile(room: Room, requesterId: string, tileId: number, name: string): string | null;
+    addCard(room: Room, requesterId: string, input: unknown): string | null;
+    removeCard(room: Room, requesterId: string, cardId: string): string | null;
     leave(room: Room, playerId: string): void;
+    /** A viewer closed the tab or left; just drop the head count. */
+    leaveSpectator(room: Room): void;
     /** Called when a socket drops; the seat is held open for the grace period. */
     markDisconnected(room: Room, playerId: string): void;
-    dispatch(room: Room, playerId: string, action: GameAction): string | null;
+    dispatch(room: Room, playerId: string, action: GameAction, spectator?: boolean): string | null;
     private dispatchInternal;
     chat(room: Room, playerId: string, text: string): void;
     private tick;

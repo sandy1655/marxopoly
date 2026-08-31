@@ -26,6 +26,10 @@ export default function BoardTile({ tile, state, onSelect, selected }: Props) {
   const ownable = tile.kind === 'street' || tile.kind === 'depot' || tile.kind === 'works';
   const special = SPECIAL[tile.kind];
   const isCorner = edge === 'corner';
+  const custom = state.tileNames[tile.id];
+  const label = isCorner
+    ? special?.label ?? tile.name
+    : custom ?? tile.short ?? tile.name;
 
   const classes = [
     'tile',
@@ -47,7 +51,7 @@ export default function BoardTile({ tile, state, onSelect, selected }: Props) {
         ...(isCorner || !ownable ? { '--tile-bg': special?.bg ?? '#f1f5f9' } : null),
       } as React.CSSProperties}
       onClick={() => ownable && onSelect(tile.id)}
-      aria-label={tile.name}
+      aria-label={custom ?? tile.name}
     >
       {/* Ownership shows as a thick bar on the tile's outer edge. */}
       {owner && <span className="tile-owner-bar" style={{ background: owner.color }} />}
@@ -64,9 +68,7 @@ export default function BoardTile({ tile, state, onSelect, selected }: Props) {
 
       <span className="tile-body">
         {!ownable && special && <span className="tile-glyph">{special.glyph}</span>}
-        <span className="tile-name">
-          {isCorner ? special?.label ?? tile.name : tile.short ?? tile.name}
-        </span>
+        <span className="tile-name">{label}</span>
         {'price' in tile && <span className="tile-price">{money(tile.price)}</span>}
         {tile.kind === 'tax' && <span className="tile-price">Pay {money(tile.amount)}</span>}
         {deed?.mortgaged && <span className="tile-mortgage">MORTGAGED</span>}

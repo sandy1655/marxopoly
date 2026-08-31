@@ -83,8 +83,15 @@ export type CardEffect =
     perHouse: number;
     perHotel: number;
 };
+export type CardEffectKind = CardEffect['kind'];
 export interface Card {
     id: string;
+    deck: 'fortune' | 'ledger';
+    text: string;
+    effect: CardEffect;
+}
+/** A card the host is proposing; the id is assigned server-side. */
+export interface CardInput {
     deck: 'fortune' | 'ledger';
     text: string;
     effect: CardEffect;
@@ -187,6 +194,22 @@ export interface LogEntry {
     text: string;
     kind: 'roll' | 'move' | 'money' | 'trade' | 'build' | 'card' | 'system' | 'chat';
 }
+/** Net-worth of every player at one point in the game. */
+export interface NetWorthSnapshot {
+    /** Monotonic sample index; roughly "turns played so far". */
+    turn: number;
+    /** playerId -> net worth (bankrupt players are 0). */
+    worth: Record<string, number>;
+}
+/** Running analytics, surfaced on the end-of-game screen. */
+export interface GameStats {
+    /** Times each player was sent to / entered the holding yard. */
+    holdingVisits: Record<string, number>;
+    /** Total cash each player has swept from the Plaza pot. */
+    plazaTake: Record<string, number>;
+    /** Net-worth history, one entry per turn (index 0 = game start). */
+    netWorthHistory: NetWorthSnapshot[];
+}
 export interface GameState {
     id: string;
     phase: Phase;
@@ -218,6 +241,12 @@ export interface GameState {
     startedAt: number | null;
     endedAt: number | null;
     winnerId: string | null;
+    /** Host overrides for board tile names: tileId -> custom name. Sparse. */
+    tileNames: Record<number, string>;
+    /** The Fortune + Ledger decks in play. Host-editable in the lobby. */
+    cards: Card[];
+    /** Running analytics for the end-of-game screen. */
+    stats: GameStats;
     /** Monotonic counter bumped on every applied action; useful for client reconciliation. */
     version: number;
 }
@@ -271,6 +300,7 @@ export type GameAction = {
     type: 'declare_bankruptcy';
 } | {
     type: 'resign';
+    reason?: 'left' | 'bankrupt';
 } | {
     type: 'set_connected';
     playerId: string;
@@ -297,6 +327,8 @@ export interface RoomSummary {
     hostId: string;
     playerCount: number;
     maxPlayers: number;
+    /** How many people are currently watching without a seat. */
+    spectatorCount: number;
     phase: Phase;
     isPrivate: boolean;
     createdAt: number;
@@ -320,6 +352,8 @@ export interface ServerToClientEvents {
         roomId: string;
         playerId: string;
         token: string;
+        /** True when there was no seat to take and the socket joined as a viewer. */
+        spectator?: boolean;
     }) => void;
     'room:chat': (message: ChatMessage) => void;
     'room:error': (payload: {
@@ -348,6 +382,7 @@ export interface ClientToServerEvents {
     }, ack: (res: {
         ok: boolean;
         error?: string;
+        spectator?: boolean;
     }) => void) => void;
     'room:leave': () => void;
     'room:action': (action: GameAction, ack?: (res: {
@@ -358,5 +393,14 @@ export interface ClientToServerEvents {
     'room:settings': (settings: Partial<GameSettings>) => void;
     'room:add_bot': () => void;
     'room:kick': (playerId: string) => void;
+    /** Host only, lobby only: rename a board tile (empty string clears the override). */
+    'room:rename_tile': (payload: {
+        tileId: number;
+        name: string;
+    }) => void;
+    /** Host only, lobby only: append a new special card. */
+    'room:add_card': (card: CardInput) => void;
+    /** Host only, lobby only: delete a special card by id. */
+    'room:remove_card': (cardId: string) => void;
 }
 //# sourceMappingURL=types.d.ts.map

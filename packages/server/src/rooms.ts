@@ -1,11 +1,16 @@
 import { randomUUID } from 'node:crypto';
 import {
+  addCard,
   addPlayerToLobby,
   applyAction,
   applySettings,
   createGame,
   currentPlayer,
+  makeCard,
+  removeCard,
   removePlayerFromLobby,
+  renameTile,
+  sanitizeCardInput,
   type ChatMessage,
   type GameAction,
   type GameSettings,
@@ -29,6 +34,8 @@ export interface Room {
   /** playerId -> socket id, only for connected players. */
   sockets: Map<string, string>;
   chat: ChatMessage[];
+  /** Sockets watching without a seat. Kept only for the lobby listing count. */
+  spectators: number;
   /** playerId -> timer that forfeits the seat if they never come back. */
   dropTimers: Map<string, NodeJS.Timeout>;
   botTimer: NodeJS.Timeout | null;
@@ -72,13 +79,15 @@ export class RoomManager {
 
   list(): RoomSummary[] {
     return [...this.rooms.values()]
-      .filter((r) => !r.isPrivate)
+      // A finished game drops off the board — nothing left to join or watch.
+      .filter((r) => !r.isPrivate && r.state.phase !== 'game_over')
       .map((r) => ({
         id: r.id,
         name: r.name,
         hostId: r.hostId,
         playerCount: r.state.players.filter((p) => !p.bankrupt).length,
         maxPlayers: r.state.settings.maxPlayers,
+        spectatorCount: r.spectators,
         phase: r.state.phase,
         isPrivate: r.isPrivate,
         createdAt: r.createdAt,
@@ -115,6 +124,7 @@ export class RoomManager {
       tokens: new Map([[playerId, token]]),
       sockets: new Map(),
       chat: [],
+      spectators: 0,
       dropTimers: new Map(),
       botTimer: null,
       lastActivity: Date.now(),
@@ -130,6 +140,7 @@ export class RoomManager {
     socketId: string,
   ):
     | { ok: true; room: Room; playerId: string; token: string; displacedSocketId?: string }
+    | { ok: true; room: Room; spectator: true }
     | { ok: false; error: string } {
     const room = this.rooms.get(roomId.toUpperCase());
     if (!room) return { ok: false, error: 'That room does not exist.' };
@@ -154,7 +165,13 @@ export class RoomManager {
       }
     }
 
-    if (room.state.phase !== 'lobby') return { ok: false, error: 'That game is already under way.' };
+    // A game already under way has no seats to give — join as a viewer instead.
+    if (room.state.phase !== 'lobby') {
+      room.spectators += 1;
+      room.lastActivity = Date.now();
+      this.emit(room);
+      return { ok: true, room, spectator: true };
+    }
     if (room.state.players.length >= room.state.settings.maxPlayers) {
       return { ok: false, error: 'That table is full.' };
     }
@@ -199,6 +216,34 @@ export class RoomManager {
     return null;
   }
 
+  renameTile(room: Room, requesterId: string, tileId: number, name: string): string | null {
+    if (room.hostId !== requesterId) return 'Only the host can rename tiles.';
+    if (room.state.phase !== 'lobby') return 'The board is locked once the game starts.';
+    room.state = renameTile(room.state, tileId, name);
+    this.emit(room);
+    return null;
+  }
+
+  addCard(room: Room, requesterId: string, input: unknown): string | null {
+    if (room.hostId !== requesterId) return 'Only the host can add cards.';
+    if (room.state.phase !== 'lobby') return 'Cards are locked once the game starts.';
+    const clean = sanitizeCardInput(input);
+    if (typeof clean === 'string') return clean;
+    room.state = addCard(room.state, makeCard(clean, `c-${randomUUID().slice(0, 8)}`));
+    this.emit(room);
+    return null;
+  }
+
+  removeCard(room: Room, requesterId: string, cardId: string): string | null {
+    if (room.hostId !== requesterId) return 'Only the host can remove cards.';
+    if (room.state.phase !== 'lobby') return 'Cards are locked once the game starts.';
+    const before = room.state.cards.length;
+    room.state = removeCard(room.state, cardId);
+    if (room.state.cards.length === before) return 'A deck must keep at least one card.';
+    this.emit(room);
+    return null;
+  }
+
   leave(room: Room, playerId: string): void {
     room.sockets.delete(playerId);
     if (room.state.phase === 'lobby') {
@@ -212,7 +257,28 @@ export class RoomManager {
       else this.emit(room);
       return;
     }
-    this.dispatchInternal(room, playerId, { type: 'set_connected', playerId, connected: false });
+
+    // Explicitly leaving a game in progress is a forfeit: the engine hands the
+    // player's properties back to the bank (no houses, buyable again), zeroes
+    // their cash, and ends the game if only one player is left standing.
+    const timer = room.dropTimers.get(playerId);
+    if (timer) {
+      clearTimeout(timer);
+      room.dropTimers.delete(playerId);
+    }
+    room.tokens.delete(playerId);
+    if (room.state.phase !== 'game_over') {
+      this.dispatchInternal(room, playerId, { type: 'resign' });
+    } else {
+      this.emit(room);
+    }
+  }
+
+  /** A viewer closed the tab or left; just drop the head count. */
+  leaveSpectator(room: Room): void {
+    room.spectators = Math.max(0, room.spectators - 1);
+    room.lastActivity = Date.now();
+    this.emit(room);
   }
 
   /** Called when a socket drops; the seat is held open for the grace period. */
@@ -242,7 +308,8 @@ export class RoomManager {
   // Gameplay
   // -------------------------------------------------------------------------
 
-  dispatch(room: Room, playerId: string, action: GameAction): string | null {
+  dispatch(room: Room, playerId: string, action: GameAction, spectator = false): string | null {
+    if (spectator) return 'Viewers cannot take actions.';
     // Players may never inject engine-internal actions.
     if (action.type === 'set_connected' || action.type === 'timeout') {
       return 'Not allowed.';
@@ -286,7 +353,11 @@ export class RoomManager {
   private tick(): void {
     const now = Date.now();
     for (const room of [...this.rooms.values()]) {
-      if (room.sockets.size === 0 && now - room.lastActivity > config.emptyRoomTtlMs) {
+      if (
+        room.sockets.size === 0 &&
+        room.spectators === 0 &&
+        now - room.lastActivity > config.emptyRoomTtlMs
+      ) {
         this.destroy(room.id);
         continue;
       }

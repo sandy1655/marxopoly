@@ -1,5 +1,7 @@
 import { type CardEffect, type GameState, type Player, type Tile } from '@rentier/shared';
 export declare function money(value: number): string;
+/** Compact money for tight spots like chart axes: $0, $850, $1.2k, $3.4M. */
+export declare function compactMoney(value: number): string;
 export declare function tileColor(tile: Tile): string | null;
 /** CSS grid placement for tile `id` on the 11x11 ring. */
 export declare function gridPosition(id: number): {
@@ -36,6 +38,6 @@ export declare function tokenSpot(id: number): {
     y: number;
 };
 /** Plain-English summary of a card's effect, derived from the effect object so
- *  new cards added to `packages/shared/src/data/cards.ts` describe themselves. */
-export declare function describeCardEffect(effect: CardEffect): string;
+ *  new cards describe themselves. Pass `tileNames` for the host's renames. */
+export declare function describeCardEffect(effect: CardEffect, tileNames?: Record<number, string>): string;
 //# sourceMappingURL=lib.d.ts.map

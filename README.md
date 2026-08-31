@@ -30,8 +30,14 @@ whatever state the server broadcasts. Every rule lives in one place.
   moment of acceptance so a stale offer can never execute.
 - **Debt instead of instant death** — falling short opens a debt you must settle by selling
   buildings, mortgaging or trading. Bankruptcy is only allowed when you genuinely cannot pay.
+- **Report bankrupt** — give up at any time: your properties go back to the bank (no houses),
+  your cash is wiped, and the game ends if you were the second-to-last player. You keep your
+  seat and can watch the rest of the game — unlike *Leave table*, which drops you out entirely.
 - **Reconnect** — your seat is held for two minutes; refreshing the tab drops you straight back in,
   and a second tab joins as a separate player instead of stealing your seat.
+- **Watch a game in progress** — a table that has already started still shows in the list; joining it
+  (or a folded player staying on) puts you in view-only mode with no board actions. Finished games
+  drop off the list entirely.
 - **Bright, readable board** — full-colour property headers, short board labels, large tokens with
   player initials, and an owner bar on each tile's outer edge.
 - **Turn timers** — configurable, with sensible auto-resolution when they expire.
@@ -111,6 +117,12 @@ The client can point at a different backend with `VITE_SERVER_URL`.
 Per-table house rules (starting cash, salary, auctions on/off, even build, double rent on full sets,
 plaza pot, turn timer, max players) are set by the host in the lobby.
 
+The host can also **Customise** the table from the lobby: rename any street/depot/works tile, and
+view, delete or create Fortune / Ledger cards. New cards are built from a small form (deck, text,
+and one of the nine effect types with its parameters) and validated on the server. Everything is
+locked once the game starts; `packages/shared/src/data/cards.ts` and `board.ts` still hold the
+defaults every game seeds from.
+
 ## The board
 
 Forty tiles: twenty-two streets in eight colour groups, four depots, two works, two taxes, four
@@ -120,7 +132,7 @@ corners, and seven card tiles.
   then follow a five-step ladder through four houses to a hotel.
 - **Depots** pay 25 / 50 / 100 / 200 depending on how many of the four you hold.
 - **Works** pay 4x or 10x the dice roll depending on whether you hold one or both.
-- **Fortune** and **Ledger** are the two sixteen-card decks.
+- **Fortune** and **Ledger** are the two card decks (sixteen each by default; host-editable).
 - The **Holding Yard** detains you: roll doubles, pay the fine, or spend a reprieve card. After
   three failed attempts you pay and move.
 

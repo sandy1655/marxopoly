@@ -41,7 +41,7 @@ export default function Lobby() {
         </div>
         <div className="row">
           <button className="btn ghost" onClick={() => setShowCards(true)}>
-            View cards
+            {isHost ? 'Customise' : 'View cards'}
           </button>
           <button className="btn ghost" onClick={leaveRoom}>
             Leave
@@ -49,7 +49,9 @@ export default function Lobby() {
         </div>
       </header>
 
-      {showCards && <CardsPanel onClose={() => setShowCards(false)} />}
+      {showCards && (
+        <CardsPanel state={game} editable={isHost} onClose={() => setShowCards(false)} />
+      )}
 
       <div className="lobby-grid">
         <section className="card">

@@ -80,20 +80,26 @@ export default function Home() {
 
           <div className="room-list">
             {rooms.length === 0 && <p className="muted">No public tables right now — start one.</p>}
-            {rooms.map((room) => (
-              <button
-                key={room.id}
-                className="room-row"
-                disabled={!nameOk || room.phase !== 'lobby'}
-                onClick={() => joinRoom(room.id)}
-              >
-                <span className="room-name">{room.name}</span>
-                <span className="room-meta">
-                  {room.playerCount}/{room.maxPlayers} · {room.phase === 'lobby' ? 'open' : 'in play'}
-                </span>
-                <span className="room-code">{room.id}</span>
-              </button>
-            ))}
+            {rooms.map((room) => {
+              const lobby = room.phase === 'lobby';
+              const full = room.playerCount >= room.maxPlayers;
+              return (
+                <button
+                  key={room.id}
+                  className="room-row"
+                  disabled={!nameOk || (lobby && full)}
+                  onClick={() => joinRoom(room.id)}
+                >
+                  <span className="room-name">{room.name}</span>
+                  <span className="room-meta">
+                    {room.playerCount}/{room.maxPlayers} ·{' '}
+                    {lobby ? (full ? 'full' : 'open') : 'in play — watch'}
+                    {room.spectatorCount > 0 && ` · ${room.spectatorCount} watching`}
+                  </span>
+                  <span className="room-code">{room.id}</span>
+                </button>
+              );
+            })}
           </div>
         </section>
       </div>

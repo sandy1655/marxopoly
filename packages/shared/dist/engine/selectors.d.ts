@@ -4,6 +4,8 @@ export declare function requirePlayer(state: GameState, id: string): Player;
 export declare function currentPlayer(state: GameState): Player | undefined;
 export declare function activePlayers(state: GameState): Player[];
 export declare function ownableTile(tileId: number): OwnableTile | null;
+/** A tile's name for display, honouring the host's lobby renames. */
+export declare function tileLabel(state: Pick<GameState, 'tileNames'>, tileId: number): string;
 export declare function ownedTileIds(state: GameState, playerId: string): number[];
 export declare function groupOf(tile: Tile): string | null;
 export declare function ownsWholeGroup(state: GameState, playerId: string, group: string): boolean;

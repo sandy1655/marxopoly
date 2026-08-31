@@ -4,6 +4,7 @@ import {
   countOwnedInGroup,
   mortgageValue,
   ownableTile,
+  tileLabel,
   type GameState,
 } from '@rentier/shared';
 import { money, tileColor } from '../lib.js';
@@ -23,7 +24,7 @@ export default function TileDetail({ state, tileId, onClose }: Props) {
   return (
     <div className="panel detail">
       <div className="detail-head" style={{ background: tileColor(tile) ?? '#475569' }}>
-        <strong>{tile.name}</strong>
+        <strong>{tileLabel(state, tileId)}</strong>
         <button className="x" onClick={onClose} aria-label="Close">
           ×
         </button>

@@ -12,6 +12,14 @@ export function money(value: number): string {
   return `$${Math.round(value).toLocaleString('en-US')}`;
 }
 
+/** Compact money for tight spots like chart axes: $0, $850, $1.2k, $3.4M. */
+export function compactMoney(value: number): string {
+  const n = Math.round(value);
+  if (Math.abs(n) >= 1_000_000) return `$${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
+  if (Math.abs(n) >= 1_000) return `$${(n / 1_000).toFixed(1).replace(/\.0$/, '')}k`;
+  return `$${n}`;
+}
+
 export function tileColor(tile: Tile): string | null {
   if (tile.kind === 'street') return GROUP_COLORS[tile.group as ColorGroup];
   if (tile.kind === 'depot') return GROUP_COLORS.depot;
@@ -133,8 +141,11 @@ export function tokenSpot(id: number): { x: number; y: number } {
 }
 
 /** Plain-English summary of a card's effect, derived from the effect object so
- *  new cards added to `packages/shared/src/data/cards.ts` describe themselves. */
-export function describeCardEffect(effect: CardEffect): string {
+ *  new cards describe themselves. Pass `tileNames` for the host's renames. */
+export function describeCardEffect(
+  effect: CardEffect,
+  tileNames?: Record<number, string>,
+): string {
   switch (effect.kind) {
     case 'cash':
       return effect.amount >= 0
@@ -144,8 +155,10 @@ export function describeCardEffect(effect: CardEffect): string {
       return `Collect ${money(effect.amount)} from every other player.`;
     case 'pay_each':
       return `Pay ${money(effect.amount)} to every other player.`;
-    case 'move_to':
-      return `Move to ${tileAt(effect.tile).name} (${effect.collectStart ? 'salary if you pass Start' : 'no salary'}).`;
+    case 'move_to': {
+      const name = tileNames?.[effect.tile] ?? tileAt(effect.tile).name;
+      return `Move to ${name} (${effect.collectStart ? 'salary if you pass Start' : 'no salary'}).`;
+    }
     case 'move_by':
       return effect.steps >= 0
         ? `Move forward ${effect.steps} ${effect.steps === 1 ? 'tile' : 'tiles'}.`

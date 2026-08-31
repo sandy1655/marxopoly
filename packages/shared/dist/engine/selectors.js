@@ -19,6 +19,10 @@ export function ownableTile(tileId) {
     const tile = tileAt(tileId);
     return isOwnable(tile) ? tile : null;
 }
+/** A tile's name for display, honouring the host's lobby renames. */
+export function tileLabel(state, tileId) {
+    return state.tileNames[tileId] ?? tileAt(tileId).name;
+}
 export function ownedTileIds(state, playerId) {
     return OWNABLE_TILE_IDS.filter((id) => state.deeds[id]?.ownerId === playerId);
 }

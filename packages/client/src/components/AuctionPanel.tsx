@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { tileAt, type GameState } from '@rentier/shared';
+import { tileAt, tileLabel, type GameState } from '@rentier/shared';
 import { send } from '../net.js';
 import { money, secondsLeft, tileColor } from '../lib.js';
 
@@ -39,7 +39,7 @@ export default function AuctionPanel({ state, myId }: Props) {
         </header>
 
         <div className="auction-tile" style={{ borderColor: tileColor(tile) ?? '#334155' }}>
-          <strong>{tile.name}</strong>
+          <strong>{tileLabel(state, auction.tileId)}</strong>
           {'price' in tile && <span>list {money(tile.price)}</span>}
         </div>
 

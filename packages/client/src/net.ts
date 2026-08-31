@@ -1,6 +1,7 @@
 import { io, type Socket } from 'socket.io-client';
 import { useSyncExternalStore } from 'react';
 import type {
+  CardInput,
   ChatMessage,
   ClientToServerEvents,
   GameAction,
@@ -69,6 +70,8 @@ export interface ClientStore {
   roomName: string;
   playerId: string | null;
   hostId: string | null;
+  /** True when this tab joined a game in progress as a watch-only viewer. */
+  spectator: boolean;
   game: GameState | null;
   rooms: RoomSummary[];
   chat: ChatMessage[];
@@ -83,6 +86,7 @@ let state: ClientStore = {
   roomName: '',
   playerId: null,
   hostId: null,
+  spectator: false,
   game: null,
   rooms: [],
   chat: [],
@@ -123,10 +127,14 @@ socket.on('connect', () => {
   socket.emit('lobby:list');
   // Try to walk straight back into whatever table we were sitting at.
   const session = readSession();
-  if (session?.roomId && session.token) {
+  if (session?.roomId) {
     socket.emit(
       'room:join',
-      { roomId: session.roomId, playerName: session.playerName, token: session.token },
+      {
+        roomId: session.roomId,
+        playerName: session.playerName,
+        token: session.token || undefined,
+      },
       (res) => {
         if (!res.ok) writeSession(null);
       },
@@ -142,9 +150,9 @@ socket.on('connect_error', () => {
 
 socket.on('room:list', (rooms) => set({ rooms }));
 
-socket.on('room:joined', ({ roomId, playerId, token }) => {
+socket.on('room:joined', ({ roomId, playerId, token, spectator }) => {
   writeSession({ roomId, token, playerName: state.playerName });
-  set({ roomId, playerId, error: null, joining: false });
+  set({ roomId, playerId, spectator: !!spectator, error: null, joining: false });
 });
 
 socket.on('room:state', ({ state: game, hostId, roomName }) => {
@@ -165,7 +173,7 @@ socket.on('room:error', ({ message }) => {
 
 socket.on('room:left', () => {
   writeSession(null);
-  set({ roomId: null, playerId: null, game: null, chat: [], hostId: null });
+  set({ roomId: null, playerId: null, spectator: false, game: null, chat: [], hostId: null });
 });
 
 // ---------------------------------------------------------------------------
@@ -204,7 +212,16 @@ export function joinRoom(roomId: string): void {
 export function leaveRoom(): void {
   socket.emit('room:leave');
   writeSession(null);
-  set({ roomId: null, playerId: null, game: null, chat: [], hostId: null });
+  set({ roomId: null, playerId: null, spectator: false, game: null, chat: [], hostId: null });
+}
+
+/**
+ * Give up while staying in the room. Runs the same engine forfeit as leaving
+ * the table (properties back to the bank, cash to zero, game ends if one player
+ * is left), but the socket stays put so you can watch the rest of the game.
+ */
+export function reportBankrupt(): void {
+  send({ type: 'resign', reason: 'bankrupt' });
 }
 
 export function send(action: GameAction): void {
@@ -227,6 +244,18 @@ export function addBot(): void {
 
 export function kickPlayer(playerId: string): void {
   socket.emit('room:kick', playerId);
+}
+
+export function renameTile(tileId: number, name: string): void {
+  socket.emit('room:rename_tile', { tileId, name });
+}
+
+export function addCard(card: CardInput): void {
+  socket.emit('room:add_card', card);
+}
+
+export function removeCard(cardId: string): void {
+  socket.emit('room:remove_card', cardId);
 }
 
 export function refreshRooms(): void {

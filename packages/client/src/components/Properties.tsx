@@ -5,7 +5,7 @@ import {
   GROUP_ORDER,
   GROUP_TILES,
   ownsWholeGroup,
-  tileAt,
+  tileLabel,
   type GameState,
 } from '@rentier/shared';
 
@@ -17,11 +17,13 @@ interface Props {
 const GROUPS: readonly string[] = [...GROUP_ORDER, 'depot', 'works'];
 
 export default function Properties({ state, myId }: Props) {
-  const [mineOnly, setMineOnly] = useState(false);
+  const [mineOnly, setMineOnly] = useState(true);
   const playerById = new Map(state.players.map((p) => [p.id, p]));
   const myCount = myId
     ? Object.values(state.deeds).filter((d) => d.ownerId === myId).length
     : 0;
+  // "Mine" is the default, but a spectator with no seat always sees everything.
+  const showMineOnly = mineOnly && !!myId;
 
   return (
     <div className="panel deeds">
@@ -43,8 +45,8 @@ export default function Properties({ state, myId }: Props) {
         {GROUPS.map((group) => {
           const color = GROUP_COLORS[group as keyof typeof GROUP_COLORS];
           const rows = (GROUP_TILES[group] ?? [])
-            .map((id) => ({ id, tile: tileAt(id), deed: state.deeds[id] }))
-            .filter((r) => !mineOnly || r.deed?.ownerId === myId);
+            .map((id) => ({ id, deed: state.deeds[id] }))
+            .filter((r) => !showMineOnly || r.deed?.ownerId === myId);
           if (rows.length === 0) return null;
 
           const fullSet = !!myId && ownsWholeGroup(state, myId, group);
@@ -59,7 +61,7 @@ export default function Properties({ state, myId }: Props) {
                 {fullSet && <span className="tag you">full set</span>}
               </div>
 
-              {rows.map(({ id, tile, deed }) => {
+              {rows.map(({ id, deed }) => {
                 const owner = deed?.ownerId ? playerById.get(deed.ownerId) : null;
                 const isMine = !!owner && owner.id === myId;
                 return (
@@ -69,7 +71,7 @@ export default function Properties({ state, myId }: Props) {
                   >
                     <span className="deed-item-band" style={{ background: color }} />
                     <span className="deed-item-name">
-                      {tile.name}
+                      {tileLabel(state, id)}
                       {deed && deed.houses > 0 && (
                         <span className="deed-item-houses">
                           {deed.houses === 5 ? 'Hotel' : `${deed.houses}h`}
@@ -97,7 +99,7 @@ export default function Properties({ state, myId }: Props) {
         })}
       </div>
 
-      {mineOnly && myCount === 0 && <p className="muted small">You do not own anything yet.</p>}
+      {showMineOnly && myCount === 0 && <p className="muted small">You do not own anything yet.</p>}
     </div>
   );
 }

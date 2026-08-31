@@ -1,5 +1,4 @@
 import { BOARD_SIZE, GROUP_TILES, HOLDING_TILE, tileAt, } from '../data/board.js';
-import { FORTUNE_CARDS, LEDGER_CARDS, cardById } from '../data/cards.js';
 import { rollDice, shuffle } from '../rng.js';
 import { isOwnable } from '../types.js';
 import { activePlayers, canBuild, canMortgage, canSellBuilding, currentPlayer, getPlayer, groupOf, liquidValue, netWorth, nextTileOfKind, ownableTile, ownedTileIds, rentFor, unmortgageCost, } from './selectors.js';
@@ -67,7 +66,7 @@ function dispatch(g, playerId, action, now) {
         case 'declare_bankruptcy':
             return doDeclareBankruptcy(g, playerId, now);
         case 'resign':
-            return doResign(g, playerId, now);
+            return doResign(g, playerId, now, action.reason ?? 'left');
         case 'timeout':
             return doTimeout(g, now);
         default:
@@ -86,6 +85,10 @@ function log(g, kind, text, playerId) {
 }
 function money(n) {
     return `$${Math.round(n).toLocaleString('en-US')}`;
+}
+/** A tile's display name, honouring the host's rename overrides. */
+function tname(g, tileId) {
+    return g.tileNames[tileId] ?? tileAt(tileId).name;
 }
 function credit(g, player, amount) {
     player.cash += amount;
@@ -143,11 +146,24 @@ function startGame(g, playerId, now) {
     g.turnSeat = 0;
     g.startedAt = now;
     setDeadline(g, now);
+    recordNetWorth(g);
     log(g, 'system', `Game started with ${g.players.length} players.`);
     const first = currentPlayer(g);
     if (first)
         log(g, 'system', `${first.name} goes first.`, first.id);
     return null;
+}
+/** Snapshot every player's net worth for the end-of-game chart. */
+function recordNetWorth(g) {
+    const worth = {};
+    for (const p of g.players)
+        worth[p.id] = p.bankrupt ? 0 : netWorth(g, p.id);
+    const history = g.stats.netWorthHistory;
+    const turn = history.length ? history[history.length - 1].turn + 1 : 0;
+    history.push({ turn, worth });
+    // Keep marathon games from growing the state unbounded; trim the oldest.
+    if (history.length > 400)
+        history.shift();
 }
 function setDeadline(g, now) {
     g.turnDeadline = g.settings.turnSeconds > 0 ? now + g.settings.turnSeconds * 1000 : null;
@@ -227,7 +243,7 @@ function moveTo(g, player, target, collectStart, now, diceTotalOverride) {
         credit(g, player, g.settings.startSalary);
         log(g, 'money', `${player.name} passed Start and drew ${money(g.settings.startSalary)}.`, player.id);
     }
-    log(g, 'move', `${player.name} landed on ${tile.name}.`, player.id);
+    log(g, 'move', `${player.name} landed on ${tname(g, tile.id)}.`, player.id);
     resolveLanding(g, player, diceTotalOverride ?? diceTotal(g), now, 1);
 }
 function diceTotal(g) {
@@ -237,6 +253,7 @@ function sendToHolding(g, player) {
     player.position = HOLDING_TILE;
     player.inHolding = true;
     player.holdingTurns = 0;
+    g.stats.holdingVisits[player.id] = (g.stats.holdingVisits[player.id] ?? 0) + 1;
 }
 // ---------------------------------------------------------------------------
 // Landing resolution
@@ -251,7 +268,7 @@ function resolveLanding(g, player, total, now, rentMultiplier) {
                 setDeadline(g, now);
             }
             else if (g.settings.auctionsEnabled) {
-                log(g, 'system', `${player.name} cannot afford ${tile.name}. It goes to auction.`, player.id);
+                log(g, 'system', `${player.name} cannot afford ${tname(g, tile.id)}. It goes to auction.`, player.id);
                 beginAuction(g, tile.id, player.id, now);
             }
             return;
@@ -259,7 +276,7 @@ function resolveLanding(g, player, total, now, rentMultiplier) {
         if (deed.ownerId === player.id)
             return;
         if (deed.mortgaged) {
-            log(g, 'system', `${tile.name} is mortgaged — no rent is due.`, player.id);
+            log(g, 'system', `${tname(g, tile.id)} is mortgaged — no rent is due.`, player.id);
             return;
         }
         const owner = getPlayer(g, deed.ownerId);
@@ -267,14 +284,14 @@ function resolveLanding(g, player, total, now, rentMultiplier) {
         const rent = base * rentMultiplier;
         if (rent <= 0)
             return;
-        log(g, 'money', `${player.name} owes ${owner.name} ${money(rent)} for ${tile.name}.`, player.id);
-        charge(g, player, rent, owner.id, `rent on ${tile.name}`);
+        log(g, 'money', `${player.name} owes ${owner.name} ${money(rent)} for ${tname(g, tile.id)}.`, player.id);
+        charge(g, player, rent, owner.id, `rent on ${tname(g, tile.id)}`);
         return;
     }
     switch (tile.kind) {
         case 'tax': {
-            log(g, 'money', `${player.name} pays ${money(tile.amount)} — ${tile.name}.`, player.id);
-            charge(g, player, tile.amount, null, tile.name.toLowerCase());
+            log(g, 'money', `${player.name} pays ${money(tile.amount)} — ${tname(g, tile.id)}.`, player.id);
+            charge(g, player, tile.amount, null, tname(g, tile.id).toLowerCase());
             return;
         }
         case 'dispatch': {
@@ -284,6 +301,7 @@ function resolveLanding(g, player, total, now, rentMultiplier) {
         }
         case 'plaza': {
             if (g.settings.plazaPot && g.plazaPot > 0) {
+                g.stats.plazaTake[player.id] = (g.stats.plazaTake[player.id] ?? 0) + g.plazaPot;
                 credit(g, player, g.plazaPot);
                 log(g, 'money', `${player.name} swept the plaza pot of ${money(g.plazaPot)}.`, player.id);
                 g.plazaPot = 0;
@@ -311,14 +329,20 @@ function resolveLanding(g, player, total, now, rentMultiplier) {
 // ---------------------------------------------------------------------------
 function drawCard(g, player, deck, now) {
     const pile = deck === 'fortune' ? g.fortuneDeck : g.ledgerDeck;
+    const deckCards = g.cards.filter((c) => c.deck === deck);
+    if (deckCards.length === 0) {
+        log(g, 'system', `The ${deck === 'fortune' ? 'Fortune' : 'Ledger'} deck is empty.`, player.id);
+        return;
+    }
     if (pile.length === 0) {
-        const source = deck === 'fortune' ? FORTUNE_CARDS : LEDGER_CARDS;
-        const reshuffled = shuffle(source.map((c) => c.id), g.rngState);
+        const reshuffled = shuffle(deckCards.map((c) => c.id), g.rngState);
         g.rngState = reshuffled.state;
         pile.push(...reshuffled.value);
     }
     const cardId = pile.shift();
-    const card = cardById(cardId);
+    const card = g.cards.find((c) => c.id === cardId);
+    if (!card)
+        return;
     g.drawnCard = { deck, cardId };
     log(g, 'card', `${player.name} drew: “${card.text}”`, player.id);
     // Reprieve cards leave the deck until they are spent.
@@ -370,7 +394,7 @@ function applyCard(g, player, card, now) {
                 log(g, 'money', `${player.name} passed Start and drew ${money(g.settings.startSalary)}.`, player.id);
             }
             const tile = tileAt(target);
-            log(g, 'move', `${player.name} advanced to ${tile.name}.`, player.id);
+            log(g, 'move', `${player.name} advanced to ${tname(g, tile.id)}.`, player.id);
             const deed = g.deeds[target];
             if (!deed.ownerId) {
                 resolveLanding(g, player, diceTotal(g), now, 1);
@@ -384,8 +408,8 @@ function applyCard(g, player, card, now) {
                 : rentFor(g, target, player.id, diceTotal(g)) * effect.multiplier;
             if (base <= 0)
                 return;
-            log(g, 'money', `${player.name} owes ${owner.name} ${money(base)} for ${tile.name}.`, player.id);
-            charge(g, player, base, owner.id, `rent on ${tile.name}`);
+            log(g, 'money', `${player.name} owes ${owner.name} ${money(base)} for ${tname(g, tile.id)}.`, player.id);
+            charge(g, player, base, owner.id, `rent on ${tname(g, tile.id)}`);
             return;
         }
         case 'goto_holding': {
@@ -439,7 +463,7 @@ function doBuy(g, playerId, now) {
         return 'Not enough cash.';
     player.cash -= tile.price;
     deed.ownerId = player.id;
-    log(g, 'money', `${player.name} bought ${tile.name} for ${money(tile.price)}.`, player.id);
+    log(g, 'money', `${player.name} bought ${tname(g, tile.id)} for ${money(tile.price)}.`, player.id);
     g.phase = 'post_roll';
     settleTurn(g, now);
     return null;
@@ -454,12 +478,12 @@ function doDecline(g, playerId, now) {
     if (!tile)
         return 'Nothing here.';
     if (!g.settings.auctionsEnabled) {
-        log(g, 'system', `${player.name} passed on ${tile.name}.`, player.id);
+        log(g, 'system', `${player.name} passed on ${tname(g, tile.id)}.`, player.id);
         g.phase = 'post_roll';
         settleTurn(g, now);
         return null;
     }
-    log(g, 'system', `${player.name} sent ${tile.name} to auction.`, player.id);
+    log(g, 'system', `${player.name} sent ${tname(g, tile.id)} to auction.`, player.id);
     beginAuction(g, tile.id, player.id, now);
     return null;
 }
@@ -480,7 +504,7 @@ function beginAuction(g, tileId, starterId, now) {
         deadline: g.settings.turnSeconds > 0 ? now + Math.max(15, g.settings.turnSeconds / 3) * 1000 : null,
     };
     g.phase = 'auction';
-    log(g, 'system', `Auction open for ${tileAt(tileId).name}.`);
+    log(g, 'system', `Auction open for ${tname(g, tileId)}.`);
 }
 function doBid(g, playerId, amount, now) {
     const auction = g.auction;
@@ -537,10 +561,10 @@ function finishAuction(g, now) {
         const winner = getPlayer(g, auction.highBidderId);
         winner.cash -= auction.highBid;
         g.deeds[auction.tileId].ownerId = winner.id;
-        log(g, 'money', `${winner.name} won ${tile.name} at auction for ${money(auction.highBid)}.`, winner.id);
+        log(g, 'money', `${winner.name} won ${tname(g, tile.id)} at auction for ${money(auction.highBid)}.`, winner.id);
     }
     else {
-        log(g, 'system', `${tile.name} drew no bids and stays with the bank.`);
+        log(g, 'system', `${tname(g, tile.id)} drew no bids and stays with the bank.`);
     }
     g.auction = null;
     g.phase = 'post_roll';
@@ -566,8 +590,8 @@ function doBuild(g, playerId, tileId, now) {
     deed.houses += 1;
     const tile = tileAt(tileId);
     log(g, 'build', deed.houses === 5
-        ? `${player.name} opened a hotel on ${tile.name}.`
-        : `${player.name} built a house on ${tile.name} (${deed.houses}).`, playerId);
+        ? `${player.name} opened a hotel on ${tname(g, tile.id)}.`
+        : `${player.name} built a house on ${tname(g, tile.id)} (${deed.houses}).`, playerId);
     return null;
 }
 function doSellBuilding(g, playerId, tileId, now) {
@@ -580,7 +604,7 @@ function doSellBuilding(g, playerId, tileId, now) {
     const deed = g.deeds[tileId];
     deed.houses -= 1;
     player.cash += check.cost;
-    log(g, 'build', `${player.name} sold a building on ${tileAt(tileId).name} for ${money(check.cost)}.`, playerId);
+    log(g, 'build', `${player.name} sold a building on ${tname(g, tileId)} for ${money(check.cost)}.`, playerId);
     maybeSettleDebt(g, now);
     return null;
 }
@@ -593,7 +617,7 @@ function doMortgage(g, playerId, tileId, now) {
     const player = getPlayer(g, playerId);
     g.deeds[tileId].mortgaged = true;
     player.cash += check.cost;
-    log(g, 'money', `${player.name} mortgaged ${tileAt(tileId).name} for ${money(check.cost)}.`, playerId);
+    log(g, 'money', `${player.name} mortgaged ${tname(g, tileId)} for ${money(check.cost)}.`, playerId);
     maybeSettleDebt(g, now);
     return null;
 }
@@ -614,7 +638,7 @@ function doUnmortgage(g, playerId, tileId, now) {
         return 'Not enough cash.';
     player.cash -= cost;
     deed.mortgaged = false;
-    log(g, 'money', `${player.name} lifted the mortgage on ${tile.name} for ${money(cost)}.`, playerId);
+    log(g, 'money', `${player.name} lifted the mortgage on ${tname(g, tile.id)} for ${money(cost)}.`, playerId);
     return null;
 }
 // ---------------------------------------------------------------------------
@@ -674,9 +698,9 @@ function validateSide(g, ownerId, side) {
     for (const id of side.tileIds) {
         const deed = g.deeds[id];
         if (!deed || deed.ownerId !== ownerId)
-            return `${owner.name} does not own ${tileAt(id).name}.`;
+            return `${owner.name} does not own ${tname(g, id)}.`;
         if (deed.houses > 0)
-            return `Sell the buildings on ${tileAt(id).name} before trading it.`;
+            return `Sell the buildings on ${tname(g, id)} before trading it.`;
         const group = groupOf(tileAt(id));
         if (group && (GROUP_TILES[group] ?? []).some((gid) => (g.deeds[gid]?.houses ?? 0) > 0)) {
             return `Clear the buildings in the ${group} group before trading it.`;
@@ -805,13 +829,21 @@ function doDeclareBankruptcy(g, playerId, now) {
     bankrupt(g, playerId, g.debt.creditorId, now);
     return null;
 }
-function doResign(g, playerId, now) {
+/**
+ * Voluntary exit. `reason` only changes the log line — either way the player
+ * forfeits everything to the bank and the game ends if one player is left. A
+ * player who reports bankrupt keeps their seat and can watch to the end; the
+ * server is what decides whether the socket also leaves the room.
+ */
+function doResign(g, playerId, now, reason) {
     const player = getPlayer(g, playerId);
     if (!player || player.bankrupt)
         return 'You are already out.';
     if (g.phase === 'lobby' || g.phase === 'game_over')
         return 'Nothing to resign from.';
-    log(g, 'system', `${player.name} resigned.`, playerId);
+    log(g, 'system', reason === 'bankrupt'
+        ? `${player.name} reported bankrupt and is out of the game.`
+        : `${player.name} left the table.`, playerId);
     bankrupt(g, playerId, null, now);
     return null;
 }
@@ -855,6 +887,7 @@ function bankrupt(g, debtorId, creditorId, now) {
         g.endedAt = now;
         g.winnerId = remaining[0]?.id ?? null;
         g.turnDeadline = null;
+        recordNetWorth(g);
         if (remaining[0])
             log(g, 'system', `${remaining[0].name} wins with ${money(netWorth(g, remaining[0].id))} in assets.`);
         return;
@@ -917,6 +950,7 @@ function doEndTurn(g, playerId, now) {
 function advanceTurn(g, now) {
     if (g.phase === 'game_over')
         return;
+    recordNetWorth(g);
     const remaining = activePlayers(g);
     if (remaining.length <= 1) {
         g.phase = 'game_over';

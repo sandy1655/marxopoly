@@ -1,5 +1,5 @@
 import { type Socket } from 'socket.io-client';
-import type { ChatMessage, ClientToServerEvents, GameAction, GameSettings, GameState, RoomSummary, ServerToClientEvents } from '@rentier/shared';
+import type { CardInput, ChatMessage, ClientToServerEvents, GameAction, GameSettings, GameState, RoomSummary, ServerToClientEvents } from '@rentier/shared';
 export interface StoredSession {
     roomId: string;
     token: string;
@@ -31,5 +31,8 @@ export declare function sendChat(text: string): void;
 export declare function updateSettings(settings: Partial<GameSettings>): void;
 export declare function addBot(): void;
 export declare function kickPlayer(playerId: string): void;
+export declare function renameTile(tileId: number, name: string): void;
+export declare function addCard(card: CardInput): void;
+export declare function removeCard(cardId: string): void;
 export declare function refreshRooms(): void;
 //# sourceMappingURL=net.d.ts.map

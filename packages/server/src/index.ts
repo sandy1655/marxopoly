@@ -52,8 +52,8 @@ const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
   pingTimeout: 20_000,
 });
 
-/** socket.id -> where that socket is seated. */
-const seats = new Map<string, { roomId: string; playerId: string }>();
+/** socket.id -> where that socket is seated. `spectator` sockets have no game seat. */
+const seats = new Map<string, { roomId: string; playerId: string; spectator?: boolean }>();
 
 manager.bind(
   (room) => {
@@ -108,6 +108,11 @@ io.on('connection', (socket) => {
         ack({ ok: false, error: result.error });
         return;
       }
+      if ('spectator' in result) {
+        seatSpectator(socket, result.room);
+        ack({ ok: true, spectator: true });
+        return;
+      }
       if (result.displacedSocketId) {
         const stale = io.sockets.sockets.get(result.displacedSocketId);
         seats.delete(result.displacedSocketId);
@@ -132,7 +137,7 @@ io.on('connection', (socket) => {
       ack?.({ ok: false, error: 'That room is gone.' });
       return;
     }
-    const error = manager.dispatch(room, seat.playerId, action);
+    const error = manager.dispatch(room, seat.playerId, action, seat.spectator);
     if (error) {
       socket.emit('room:error', { message: error });
       ack?.({ ok: false, error });
@@ -176,14 +181,46 @@ io.on('connection', (socket) => {
     if (error) socket.emit('room:error', { message: error });
   });
 
+  socket.on('room:rename_tile', (payload) => {
+    const seat = seats.get(socket.id);
+    if (!seat) return;
+    const room = manager.get(seat.roomId);
+    if (!room) return;
+    const tileId = Number(payload?.tileId);
+    if (!Number.isInteger(tileId)) return;
+    const error = manager.renameTile(room, seat.playerId, tileId, String(payload?.name ?? ''));
+    if (error) socket.emit('room:error', { message: error });
+  });
+
+  socket.on('room:add_card', (card) => {
+    const seat = seats.get(socket.id);
+    if (!seat) return;
+    const room = manager.get(seat.roomId);
+    if (!room) return;
+    const error = manager.addCard(room, seat.playerId, card);
+    if (error) socket.emit('room:error', { message: error });
+  });
+
+  socket.on('room:remove_card', (cardId) => {
+    const seat = seats.get(socket.id);
+    if (!seat) return;
+    const room = manager.get(seat.roomId);
+    if (!room) return;
+    const error = manager.removeCard(room, seat.playerId, String(cardId ?? ''));
+    if (error) socket.emit('room:error', { message: error });
+  });
+
   socket.on('room:leave', () => {
     const seat = seats.get(socket.id);
     if (!seat) return;
     const room = manager.get(seat.roomId);
     seats.delete(socket.id);
     socket.leave(seat.roomId);
-    if (room) manager.leave(room, seat.playerId);
-    socket.emit('room:left', { reason: 'You left the table.' });
+    if (room) {
+      if (seat.spectator) manager.leaveSpectator(room);
+      else manager.leave(room, seat.playerId);
+    }
+    socket.emit('room:left', { reason: seat.spectator ? 'You stopped watching.' : 'You left the table.' });
   });
 
   socket.on('disconnect', () => {
@@ -191,7 +228,9 @@ io.on('connection', (socket) => {
     if (!seat) return;
     seats.delete(socket.id);
     const room = manager.get(seat.roomId);
-    if (room) manager.markDisconnected(room, seat.playerId);
+    if (!room) return;
+    if (seat.spectator) manager.leaveSpectator(room);
+    else manager.markDisconnected(room, seat.playerId);
   });
 });
 
@@ -201,6 +240,16 @@ function seatSocket(socket: GameSocket, room: Room, playerId: string, token: str
   seats.set(socket.id, { roomId: room.id, playerId });
   socket.join(room.id);
   socket.emit('room:joined', { roomId: room.id, playerId, token });
+  socket.emit('room:state', { state: room.state, hostId: room.hostId, roomName: room.name });
+  for (const message of room.chat.slice(-30)) socket.emit('room:chat', message);
+}
+
+/** Watch-only: no game seat, no reconnect token, no ability to act. */
+function seatSpectator(socket: GameSocket, room: Room): void {
+  const viewerId = `spectator:${socket.id}`;
+  seats.set(socket.id, { roomId: room.id, playerId: viewerId, spectator: true });
+  socket.join(room.id);
+  socket.emit('room:joined', { roomId: room.id, playerId: viewerId, token: '', spectator: true });
   socket.emit('room:state', { state: room.state, hostId: room.hostId, roomName: room.name });
   for (const message of room.chat.slice(-30)) socket.emit('room:chat', message);
 }

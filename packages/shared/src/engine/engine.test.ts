@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { applyAction } from './engine.js';
-import { createGame } from './state.js';
-import { getPlayer, netWorth, rentFor } from './selectors.js';
+import { addCard, createGame, makeCard, removeCard, renameTile } from './state.js';
+import { getPlayer, netWorth, rentFor, tileLabel } from './selectors.js';
+import { sanitizeCardInput } from '../data/cards.js';
+import { rollDice } from '../rng.js';
 import type { GameAction, GameState } from '../types.js';
 
 const NOW = 1_700_000_000_000;
@@ -30,6 +32,19 @@ function expectReject(state: GameState, playerId: string, action: GameAction): s
 function place(state: GameState, playerId: string, tileId: number): GameState {
   const next = structuredClone(state);
   getPlayer(next, playerId)!.position = tileId;
+  return next;
+}
+
+/** Set the player up so their next `roll_dice` lands exactly on `tileId`. */
+function primeRollTo(state: GameState, playerId: string, tileId: number): GameState {
+  const next = structuredClone(state);
+  const [d1, d2] = rollDice(next.rngState).value;
+  const player = getPlayer(next, playerId)!;
+  player.position = (((tileId - (d1 + d2)) % 40) + 40) % 40;
+  next.turnSeat = player.seat;
+  next.phase = 'pre_roll';
+  next.hasRolled = false;
+  next.doublesInARow = 0;
   return next;
 }
 
@@ -329,6 +344,28 @@ describe('debt and bankruptcy', () => {
     expect(g.phase).toBe('game_over');
     expect(g.winnerId).toBe('a');
   });
+
+  it('reporting bankrupt forfeits everything and runs the same win check as leaving', () => {
+    let g = act(newGame(), 'a', { type: 'start_game' });
+    g.deeds[1]!.ownerId = 'b';
+    g.deeds[3]!.ownerId = 'b';
+    g.deeds[1]!.houses = 3;
+    getPlayer(g, 'b')!.cash = 900;
+
+    g = act(g, 'b', { type: 'resign', reason: 'bankrupt' });
+    const b = getPlayer(g, 'b')!;
+    expect(b.bankrupt).toBe(true);
+    expect(b.cash).toBe(0);
+    expect(g.deeds[1]!.ownerId).toBeNull();
+    expect(g.deeds[1]!.houses).toBe(0);
+    expect(g.deeds[3]!.ownerId).toBeNull();
+    // still in the players list so they can spectate
+    expect(g.players.some((p) => p.id === 'b')).toBe(true);
+
+    g = act(g, 'c', { type: 'resign', reason: 'bankrupt' });
+    expect(g.phase).toBe('game_over');
+    expect(g.winnerId).toBe('a');
+  });
 });
 
 describe('holding yard', () => {
@@ -381,6 +418,42 @@ describe('determinism', () => {
   });
 });
 
+describe('host customisation', () => {
+  it('renames a tile and clears it with an empty name', () => {
+    let g = newGame();
+    g = renameTile(g, 6, 'Tel Aviv');
+    expect(tileLabel(g, 6)).toBe('Tel Aviv');
+    g = renameTile(g, 6, '  ');
+    expect(g.tileNames[6]).toBeUndefined();
+  });
+
+  it('rejects renames once the game has started', () => {
+    let g = act(newGame(), 'a', { type: 'start_game' });
+    g = renameTile(g, 6, 'Nope');
+    expect(g.tileNames[6]).toBeUndefined();
+  });
+
+  it('adds and removes special cards, rebuilding the deck', () => {
+    let g = newGame();
+    const before = g.cards.filter((c) => c.deck === 'fortune').length;
+    const input = sanitizeCardInput({ deck: 'fortune', text: 'Bonus round. Collect 500.', effect: { kind: 'cash', amount: 500 } });
+    expect(typeof input).not.toBe('string');
+    g = addCard(g, makeCard(input as Exclude<typeof input, string>, 'x1'));
+    expect(g.cards.filter((c) => c.deck === 'fortune')).toHaveLength(before + 1);
+    expect(g.fortuneDeck).toContain('x1');
+    g = removeCard(g, 'x1');
+    expect(g.cards.some((c) => c.id === 'x1')).toBe(false);
+    expect(g.fortuneDeck).not.toContain('x1');
+  });
+
+  it('validates card input', () => {
+    expect(sanitizeCardInput({ deck: 'fortune', text: '', effect: { kind: 'cash', amount: 1 } })).toMatch(/text/i);
+    expect(sanitizeCardInput({ deck: 'x', text: 'hi', effect: { kind: 'cash', amount: 1 } })).toMatch(/deck/i);
+    expect(sanitizeCardInput({ deck: 'ledger', text: 'go', effect: { kind: 'move_to', tile: 99 } })).toMatch(/tile/i);
+    expect(sanitizeCardInput({ deck: 'ledger', text: 'ok', effect: { kind: 'reprieve' } })).toMatchObject({ deck: 'ledger' });
+  });
+});
+
 describe('net worth', () => {
   it('counts cash, deeds and buildings', () => {
     let g = act(newGame(), 'a', { type: 'start_game' });
@@ -388,5 +461,37 @@ describe('net worth', () => {
     g.deeds[3]!.ownerId = 'a';
     g.deeds[1]!.houses = 2;
     expect(netWorth(g, 'a')).toBe(1500 + 60 + 60 + 100);
+  });
+});
+
+describe('end-of-game stats', () => {
+  it('seeds a net-worth snapshot at the start and captures the finish', () => {
+    let g = act(newGame(), 'a', { type: 'start_game' });
+    expect(g.stats.netWorthHistory).toHaveLength(1);
+    expect(g.stats.netWorthHistory[0]!.worth.a).toBe(1500);
+
+    g = act(g, 'b', { type: 'resign' });
+    g = act(g, 'c', { type: 'resign' });
+    expect(g.phase).toBe('game_over');
+    const last = g.stats.netWorthHistory.at(-1)!;
+    expect(last.worth.a).toBeGreaterThan(0);
+    expect(last.worth.b).toBe(0);
+  });
+
+  it('counts holding-yard visits', () => {
+    let g = act(newGame(), 'a', { type: 'start_game' });
+    g = primeRollTo(g, 'a', 30); // Dispatch -> holding yard
+    g = act(g, 'a', { type: 'roll_dice' });
+    expect(getPlayer(g, 'a')!.inHolding).toBe(true);
+    expect(g.stats.holdingVisits.a).toBe(1);
+  });
+
+  it('tracks how much each player swept from the plaza', () => {
+    let g = act(newGame({ plazaPot: true }), 'a', { type: 'start_game' });
+    g.plazaPot = 300;
+    g = primeRollTo(g, 'a', 20); // Plaza
+    g = act(g, 'a', { type: 'roll_dice' });
+    expect(g.stats.plazaTake.a).toBe(300);
+    expect(g.plazaPot).toBe(0);
   });
 });

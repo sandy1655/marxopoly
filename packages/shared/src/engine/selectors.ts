@@ -33,6 +33,11 @@ export function ownableTile(tileId: number): OwnableTile | null {
   return isOwnable(tile) ? tile : null;
 }
 
+/** A tile's name for display, honouring the host's lobby renames. */
+export function tileLabel(state: Pick<GameState, 'tileNames'>, tileId: number): string {
+  return state.tileNames[tileId] ?? tileAt(tileId).name;
+}
+
 export function ownedTileIds(state: GameState, playerId: string): number[] {
   return OWNABLE_TILE_IDS.filter((id) => state.deeds[id]?.ownerId === playerId);
 }

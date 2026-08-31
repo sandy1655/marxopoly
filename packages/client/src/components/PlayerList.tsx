@@ -1,4 +1,4 @@
-import { netWorth, ownedTileIds, tileAt, type GameState } from '@rentier/shared';
+import { netWorth, ownedTileIds, tileAt, tileLabel, type GameState } from '@rentier/shared';
 import { money, playerIcon, tileColor } from '../lib.js';
 
 interface Props {
@@ -9,6 +9,8 @@ interface Props {
 
 export default function PlayerList({ state, myId, onTrade }: Props) {
   const current = state.players.find((p) => p.seat === state.turnSeat && !p.bankrupt);
+  // A player who has folded is a spectator now — no trading.
+  const canTrade = !!myId && !state.players.find((p) => p.id === myId)?.bankrupt;
 
   return (
     <div className="panel players">
@@ -47,12 +49,12 @@ export default function PlayerList({ state, myId, onTrade }: Props) {
                     key={id}
                     className={`deed-dot${deed.mortgaged ? ' mtg' : ''}`}
                     style={{ background: tileColor(tile) ?? '#4b5563' }}
-                    title={`${tile.name}${deed.mortgaged ? ' (mortgaged)' : ''}`}
+                    title={`${tileLabel(state, id)}${deed.mortgaged ? ' (mortgaged)' : ''}`}
                   />
                 );
               })}
             </div>
-            {myId && p.id !== myId && !p.bankrupt && state.phase !== 'game_over' && (
+            {canTrade && p.id !== myId && !p.bankrupt && state.phase !== 'game_over' && (
               <button className="btn ghost small full" onClick={() => onTrade(p.id)}>
                 Offer trade
               </button>

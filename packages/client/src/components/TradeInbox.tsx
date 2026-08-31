@@ -1,4 +1,4 @@
-import { tileAt, type GameState, type TradeSide } from '@rentier/shared';
+import { tileLabel, type GameState, type TradeSide } from '@rentier/shared';
 import { send } from '../net.js';
 import { money } from '../lib.js';
 
@@ -25,11 +25,11 @@ export default function TradeInbox({ state, myId }: Props) {
             <div className="trade-offer-body">
               <div>
                 <span className="muted small">{incoming ? 'You get' : 'You give'}</span>
-                <SideSummary side={incoming ? offer.give : offer.give} />
+                <SideSummary side={offer.give} state={state} />
               </div>
               <div>
                 <span className="muted small">{incoming ? 'You give' : 'You get'}</span>
-                <SideSummary side={offer.receive} />
+                <SideSummary side={offer.receive} state={state} />
               </div>
             </div>
             {offer.message && <p className="trade-note">“{offer.message}”</p>}
@@ -56,10 +56,10 @@ export default function TradeInbox({ state, myId }: Props) {
   );
 }
 
-function SideSummary({ side }: { side: TradeSide }) {
+function SideSummary({ side, state }: { side: TradeSide; state: GameState }) {
   const parts: string[] = [];
   if (side.cash > 0) parts.push(money(side.cash));
   if (side.reprieveCards > 0) parts.push(`${side.reprieveCards} reprieve`);
-  for (const id of side.tileIds) parts.push(tileAt(id).name);
+  for (const id of side.tileIds) parts.push(tileLabel(state, id));
   return <div className="side-summary">{parts.length ? parts.join(' · ') : 'nothing'}</div>;
 }
