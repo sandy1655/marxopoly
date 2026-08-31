@@ -1,5 +1,5 @@
 import { type Deed, type GameState, type Tile } from '@rentier/shared';
-import { TOKEN_GLYPHS, gridPosition, money, playersOn, tileColor, tileEdge } from '../lib.js';
+import { gridPosition, initial, money, playersOn, tileColor, tileEdge } from '../lib.js';
 
 interface Props {
   tile: Tile;
@@ -8,68 +8,86 @@ interface Props {
   selected: boolean;
 }
 
-const KIND_GLYPH: Record<string, string> = {
-  start: '➜',
-  holding: '⌗',
-  plaza: '✧',
-  dispatch: '⚑',
-  fortune: '?',
-  ledger: '✎',
-  tax: '$',
-  depot: '▤',
-  works: '⚙',
+/** Corner and event tiles get their own colour so the board reads at a glance. */
+const SPECIAL: Record<string, { bg: string; glyph: string; label?: string }> = {
+  start: { bg: '#22c55e', glyph: '➜', label: 'GO' },
+  holding: { bg: '#f59e0b', glyph: '⏸', label: 'HOLD' },
+  plaza: { bg: '#38bdf8', glyph: '★', label: 'PLAZA' },
+  dispatch: { bg: '#ef4444', glyph: '⚑', label: 'GO TO HOLD' },
+  fortune: { bg: '#fde68a', glyph: '?' },
+  ledger: { bg: '#bfdbfe', glyph: '✎' },
+  tax: { bg: '#e2e8f0', glyph: '⛃' },
 };
 
 export default function BoardTile({ tile, state, onSelect, selected }: Props) {
   const deed: Deed | undefined = state.deeds[tile.id];
   const owner = deed?.ownerId ? state.players.find((p) => p.id === deed.ownerId) : null;
-  const color = tileColor(tile);
   const edge = tileEdge(tile.id);
   const here = playersOn(state, tile.id);
   const ownable = tile.kind === 'street' || tile.kind === 'depot' || tile.kind === 'works';
+  const special = SPECIAL[tile.kind];
+  const isCorner = edge === 'corner';
+  const turnPlayerId = state.players.find((p) => p.seat === state.turnSeat)?.id;
+
+  const classes = [
+    'tile',
+    `edge-${edge}`,
+    ownable ? 'ownable' : 'special',
+    isCorner ? 'corner' : '',
+    selected ? 'selected' : '',
+    deed?.mortgaged ? 'mortgaged' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
 
   return (
     <button
       type="button"
-      className={`tile edge-${edge}${selected ? ' selected' : ''}${deed?.mortgaged ? ' mortgaged' : ''}`}
-      style={{ ...gridPosition(tile.id) }}
+      className={classes}
+      style={{
+        ...gridPosition(tile.id),
+        ...(isCorner || !ownable ? { '--tile-bg': special?.bg ?? '#f1f5f9' } : null),
+      } as React.CSSProperties}
       onClick={() => ownable && onSelect(tile.id)}
       aria-label={tile.name}
     >
-      {color && <span className="tile-band" style={{ background: color }} />}
-      {owner && <span className="tile-owner" style={{ background: owner.color }} />}
+      {/* Ownership shows as a thick bar on the tile's outer edge. */}
+      {owner && <span className="tile-owner-bar" style={{ background: owner.color }} />}
 
-      <span className="tile-body">
-        <span className="tile-name">{tile.name}</span>
-        {tile.kind === 'street' && <span className="tile-price">{money(tile.price)}</span>}
-        {(tile.kind === 'depot' || tile.kind === 'works') && (
-          <span className="tile-price">{money(tile.price)}</span>
-        )}
-        {tile.kind === 'tax' && <span className="tile-price">{money(tile.amount)}</span>}
-        {!ownable && tile.kind !== 'tax' && (
-          <span className="tile-glyph">{KIND_GLYPH[tile.kind] ?? ''}</span>
-        )}
-      </span>
-
-      {deed && deed.houses > 0 && (
-        <span className="tile-buildings">
-          {deed.houses === 5 ? <span className="hotel">H</span> : '▪'.repeat(deed.houses)}
+      {ownable && (
+        <span className="tile-head" style={{ background: tileColor(tile) ?? '#94a3b8' }}>
+          {deed && deed.houses > 0 && (
+            <span className="tile-buildings">
+              {deed.houses === 5 ? <span className="hotel">HOTEL</span> : '●'.repeat(deed.houses)}
+            </span>
+          )}
         </span>
       )}
-      {deed?.mortgaged && <span className="tile-mortgage">MTG</span>}
 
-      <span className="tile-tokens">
-        {here.map((p) => (
-          <span
-            key={p.id}
-            className={`token${state.players.find((x) => x.seat === state.turnSeat)?.id === p.id ? ' active' : ''}`}
-            style={{ background: p.color }}
-            title={p.name}
-          >
-            {TOKEN_GLYPHS[p.token] ?? '●'}
-          </span>
-        ))}
+      <span className="tile-body">
+        {!ownable && special && <span className="tile-glyph">{special.glyph}</span>}
+        <span className="tile-name">
+          {isCorner ? special?.label ?? tile.name : tile.short ?? tile.name}
+        </span>
+        {'price' in tile && <span className="tile-price">{money(tile.price)}</span>}
+        {tile.kind === 'tax' && <span className="tile-price">Pay {money(tile.amount)}</span>}
+        {deed?.mortgaged && <span className="tile-mortgage">MORTGAGED</span>}
       </span>
+
+      {here.length > 0 && (
+        <span className="tile-tokens">
+          {here.map((p) => (
+            <span
+              key={p.id}
+              className={`token${turnPlayerId === p.id ? ' active' : ''}`}
+              style={{ background: p.color }}
+              title={p.name}
+            >
+              {initial(p.name)}
+            </span>
+          ))}
+        </span>
+      )}
     </button>
   );
 }

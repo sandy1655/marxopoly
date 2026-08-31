@@ -102,6 +102,12 @@ io.on('connection', (socket) => {
         ack({ ok: false, error: result.error });
         return;
       }
+      if (result.displacedSocketId) {
+        const stale = io.sockets.sockets.get(result.displacedSocketId);
+        seats.delete(result.displacedSocketId);
+        stale?.emit('room:left', { reason: 'You opened this table in another tab.' });
+        stale?.leave(result.room.id);
+      }
       seatSocket(socket, result.room, result.playerId, result.token);
       ack({ ok: true });
     } catch (err) {

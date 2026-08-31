@@ -1,0 +1,1361 @@
+From 1fc655b8ca926a5f90c45f9aad15b9ddc7359a02 Mon Sep 17 00:00:00 2001
+From: dev <dev@local>
+Date: Mon, 31 Aug 2026 08:24:41 +0000
+Subject: [PATCH] Fix seat hijack across tabs; bright high-contrast board
+ redesign
+
+---
+ README.md                                     |  14 +-
+ packages/client/src/components/ActionBar.tsx  |   8 +-
+ packages/client/src/components/Board.tsx      |   2 +-
+ packages/client/src/components/BoardTile.tsx  | 102 ++--
+ packages/client/src/components/GameOver.tsx   |   4 +-
+ packages/client/src/components/Home.tsx       |   5 +
+ packages/client/src/components/Lobby.tsx      |   4 +-
+ packages/client/src/components/PlayerList.tsx |   7 +-
+ packages/client/src/lib.ts                    |   5 +
+ packages/client/src/net.ts                    |  41 +-
+ packages/client/src/styles/index.css          | 567 ++++++++++--------
+ packages/server/src/index.ts                  |   6 +
+ packages/server/src/rooms.ts                  |  11 +-
+ packages/shared/src/data/board.ts             |  78 +--
+ packages/shared/src/engine/state.ts           |  14 +-
+ packages/shared/src/types.ts                  |   2 +
+ 16 files changed, 516 insertions(+), 354 deletions(-)
+
+diff --git a/README.md b/README.md
+index e1fd3cc..8840bdc 100644
+--- a/README.md
++++ b/README.md
+@@ -30,7 +30,10 @@ whatever state the server broadcasts. Every rule lives in one place.
+   moment of acceptance so a stale offer can never execute.
+ - **Debt instead of instant death** — falling short opens a debt you must settle by selling
+   buildings, mortgaging or trading. Bankruptcy is only allowed when you genuinely cannot pay.
+-- **Reconnect** — your seat is held for two minutes; refreshing the tab drops you straight back in.
++- **Reconnect** — your seat is held for two minutes; refreshing the tab drops you straight back in,
++  and a second tab joins as a separate player instead of stealing your seat.
++- **Bright, readable board** — full-colour property headers, short board labels, large tokens with
++  player initials, and an owner bar on each tile's outer edge.
+ - **Turn timers** — configurable, with sensible auto-resolution when they expire.
+ - **Bots** — heuristic opponents that buy, build, bid and answer trades.
+ - **Deterministic** — the whole game runs off one seed, so a game replays identically.
+@@ -43,8 +46,13 @@ pnpm --filter @rentier/shared build   # the client and server consume its dist o
+ pnpm dev                              # server on :3001, client on :5173
+ ```
+ 
+-Open http://localhost:5173, create a table, and open the same URL in a second tab (or send the code
+-to a friend) to join.
++Open http://localhost:5173, create a table, and open the same URL in a **second browser tab** (or
++send the five-character code to a friend) to join.
++
++Each tab is its own player. The seat token is kept in `sessionStorage`, which is per-tab, so
++refreshing a tab keeps your seat while a new tab starts fresh and can join as somebody else. If a
++second tab ever reclaims a seat, the older tab is told it was replaced rather than silently going
++dead.
+ 
+ ### Production
+ 
+diff --git a/packages/client/src/components/ActionBar.tsx b/packages/client/src/components/ActionBar.tsx
+index 1d27f5b..a6f42eb 100644
+--- a/packages/client/src/components/ActionBar.tsx
++++ b/packages/client/src/components/ActionBar.tsx
+@@ -33,7 +33,7 @@ export default function ActionBar({ state, myId, onManage }: Props) {
+   const debtIsMine = state.debt?.debtorId === myId;
+ 
+   return (
+-    <div className="actionbar">
++    <div className={`actionbar${mine || debtIsMine ? ' mine' : ''}`}>
+       <div className="actionbar-status">
+         <span className="status-text">{phaseLabel(state, myId)}</span>
+         {left !== null && state.phase !== 'game_over' && (
+@@ -54,7 +54,7 @@ export default function ActionBar({ state, myId, onManage }: Props) {
+                 Pay {money(state.settings.holdingFine)} fine
+               </button>
+             )}
+-            <button className="btn primary" onClick={() => send({ type: 'roll_dice' })}>
++            <button className="btn primary big" onClick={() => send({ type: 'roll_dice' })}>
+               Roll dice
+             </button>
+           </>
+@@ -63,7 +63,7 @@ export default function ActionBar({ state, myId, onManage }: Props) {
+         {mine && state.phase === 'awaiting_buy' && landedTile && (
+           <>
+             <button
+-              className="btn primary"
++              className="btn primary big"
+               disabled={(me?.cash ?? 0) < landedTile.price}
+               onClick={() => send({ type: 'buy_property' })}
+             >
+@@ -76,7 +76,7 @@ export default function ActionBar({ state, myId, onManage }: Props) {
+         )}
+ 
+         {mine && state.phase === 'post_roll' && (
+-          <button className="btn primary" onClick={() => send({ type: 'end_turn' })}>
++          <button className="btn primary big" onClick={() => send({ type: 'end_turn' })}>
+             End turn
+           </button>
+         )}
+diff --git a/packages/client/src/components/Board.tsx b/packages/client/src/components/Board.tsx
+index 5173a61..27a147b 100644
+--- a/packages/client/src/components/Board.tsx
++++ b/packages/client/src/components/Board.tsx
+@@ -36,7 +36,7 @@ export default function Board({ state, selected, onSelect }: Props) {
+           {current && (
+             <div className="centre-turn">
+               <span className="chip sm" style={{ background: current.color }} />
+-              {current.name}
++              {current.name}'s turn
+             </div>
+           )}
+           {state.settings.plazaPot && state.plazaPot > 0 && (
+diff --git a/packages/client/src/components/BoardTile.tsx b/packages/client/src/components/BoardTile.tsx
+index 63af8d3..2fc8a79 100644
+--- a/packages/client/src/components/BoardTile.tsx
++++ b/packages/client/src/components/BoardTile.tsx
+@@ -1,5 +1,5 @@
+ import { type Deed, type GameState, type Tile } from '@rentier/shared';
+-import { TOKEN_GLYPHS, gridPosition, money, playersOn, tileColor, tileEdge } from '../lib.js';
++import { gridPosition, initial, money, playersOn, tileColor, tileEdge } from '../lib.js';
+ 
+ interface Props {
+   tile: Tile;
+@@ -8,68 +8,86 @@ interface Props {
+   selected: boolean;
+ }
+ 
+-const KIND_GLYPH: Record<string, string> = {
+-  start: '➜',
+-  holding: '⌗',
+-  plaza: '✧',
+-  dispatch: '⚑',
+-  fortune: '?',
+-  ledger: '✎',
+-  tax: '$',
+-  depot: '▤',
+-  works: '⚙',
++/** Corner and event tiles get their own colour so the board reads at a glance. */
++const SPECIAL: Record<string, { bg: string; glyph: string; label?: string }> = {
++  start: { bg: '#22c55e', glyph: '➜', label: 'GO' },
++  holding: { bg: '#f59e0b', glyph: '⏸', label: 'HOLD' },
++  plaza: { bg: '#38bdf8', glyph: '★', label: 'PLAZA' },
++  dispatch: { bg: '#ef4444', glyph: '⚑', label: 'GO TO HOLD' },
++  fortune: { bg: '#fde68a', glyph: '?' },
++  ledger: { bg: '#bfdbfe', glyph: '✎' },
++  tax: { bg: '#e2e8f0', glyph: '⛃' },
+ };
+ 
+ export default function BoardTile({ tile, state, onSelect, selected }: Props) {
+   const deed: Deed | undefined = state.deeds[tile.id];
+   const owner = deed?.ownerId ? state.players.find((p) => p.id === deed.ownerId) : null;
+-  const color = tileColor(tile);
+   const edge = tileEdge(tile.id);
+   const here = playersOn(state, tile.id);
+   const ownable = tile.kind === 'street' || tile.kind === 'depot' || tile.kind === 'works';
++  const special = SPECIAL[tile.kind];
++  const isCorner = edge === 'corner';
++  const turnPlayerId = state.players.find((p) => p.seat === state.turnSeat)?.id;
++
++  const classes = [
++    'tile',
++    `edge-${edge}`,
++    ownable ? 'ownable' : 'special',
++    isCorner ? 'corner' : '',
++    selected ? 'selected' : '',
++    deed?.mortgaged ? 'mortgaged' : '',
++  ]
++    .filter(Boolean)
++    .join(' ');
+ 
+   return (
+     <button
+       type="button"
+-      className={`tile edge-${edge}${selected ? ' selected' : ''}${deed?.mortgaged ? ' mortgaged' : ''}`}
+-      style={{ ...gridPosition(tile.id) }}
++      className={classes}
++      style={{
++        ...gridPosition(tile.id),
++        ...(isCorner || !ownable ? { '--tile-bg': special?.bg ?? '#f1f5f9' } : null),
++      } as React.CSSProperties}
+       onClick={() => ownable && onSelect(tile.id)}
+       aria-label={tile.name}
+     >
+-      {color && <span className="tile-band" style={{ background: color }} />}
+-      {owner && <span className="tile-owner" style={{ background: owner.color }} />}
++      {/* Ownership shows as a thick bar on the tile's outer edge. */}
++      {owner && <span className="tile-owner-bar" style={{ background: owner.color }} />}
++
++      {ownable && (
++        <span className="tile-head" style={{ background: tileColor(tile) ?? '#94a3b8' }}>
++          {deed && deed.houses > 0 && (
++            <span className="tile-buildings">
++              {deed.houses === 5 ? <span className="hotel">HOTEL</span> : '●'.repeat(deed.houses)}
++            </span>
++          )}
++        </span>
++      )}
+ 
+       <span className="tile-body">
+-        <span className="tile-name">{tile.name}</span>
+-        {tile.kind === 'street' && <span className="tile-price">{money(tile.price)}</span>}
+-        {(tile.kind === 'depot' || tile.kind === 'works') && (
+-          <span className="tile-price">{money(tile.price)}</span>
+-        )}
+-        {tile.kind === 'tax' && <span className="tile-price">{money(tile.amount)}</span>}
+-        {!ownable && tile.kind !== 'tax' && (
+-          <span className="tile-glyph">{KIND_GLYPH[tile.kind] ?? ''}</span>
+-        )}
++        {!ownable && special && <span className="tile-glyph">{special.glyph}</span>}
++        <span className="tile-name">
++          {isCorner ? special?.label ?? tile.name : tile.short ?? tile.name}
++        </span>
++        {'price' in tile && <span className="tile-price">{money(tile.price)}</span>}
++        {tile.kind === 'tax' && <span className="tile-price">Pay {money(tile.amount)}</span>}
++        {deed?.mortgaged && <span className="tile-mortgage">MORTGAGED</span>}
+       </span>
+ 
+-      {deed && deed.houses > 0 && (
+-        <span className="tile-buildings">
+-          {deed.houses === 5 ? <span className="hotel">H</span> : '▪'.repeat(deed.houses)}
++      {here.length > 0 && (
++        <span className="tile-tokens">
++          {here.map((p) => (
++            <span
++              key={p.id}
++              className={`token${turnPlayerId === p.id ? ' active' : ''}`}
++              style={{ background: p.color }}
++              title={p.name}
++            >
++              {initial(p.name)}
++            </span>
++          ))}
+         </span>
+       )}
+-      {deed?.mortgaged && <span className="tile-mortgage">MTG</span>}
+-
+-      <span className="tile-tokens">
+-        {here.map((p) => (
+-          <span
+-            key={p.id}
+-            className={`token${state.players.find((x) => x.seat === state.turnSeat)?.id === p.id ? ' active' : ''}`}
+-            style={{ background: p.color }}
+-            title={p.name}
+-          >
+-            {TOKEN_GLYPHS[p.token] ?? '●'}
+-          </span>
+-        ))}
+-      </span>
+     </button>
+   );
+ }
+diff --git a/packages/client/src/components/GameOver.tsx b/packages/client/src/components/GameOver.tsx
+index fe8401d..66356c5 100644
+--- a/packages/client/src/components/GameOver.tsx
++++ b/packages/client/src/components/GameOver.tsx
+@@ -1,6 +1,6 @@
+ import { leaveRoom } from '../net.js';
+ import { netWorth, type GameState } from '@rentier/shared';
+-import { TOKEN_GLYPHS, money } from '../lib.js';
++import { initial, money } from '../lib.js';
+ 
+ interface Props {
+   state: GameState;
+@@ -25,7 +25,7 @@ export default function GameOver({ state, myId }: Props) {
+             <li key={p.id}>
+               <span className="rank">{i + 1}</span>
+               <span className="chip" style={{ background: p.color }}>
+-                {TOKEN_GLYPHS[p.token] ?? '●'}
++                {initial(p.name)}
+               </span>
+               <span className="standing-name">{p.name}</span>
+               <span className="standing-net">{p.bankrupt ? 'bankrupt' : money(netWorth(state, p.id))}</span>
+diff --git a/packages/client/src/components/Home.tsx b/packages/client/src/components/Home.tsx
+index 69609c7..c2dea86 100644
+--- a/packages/client/src/components/Home.tsx
++++ b/packages/client/src/components/Home.tsx
+@@ -73,6 +73,11 @@ export default function Home() {
+               Refresh
+             </button>
+           </div>
++          <div className="hint">
++            Testing on your own? Open a <strong>second browser tab</strong> and join with the code —
++            each tab is its own player. Refreshing a tab keeps your seat.
++          </div>
++
+           <div className="room-list">
+             {rooms.length === 0 && <p className="muted">No public tables right now — start one.</p>}
+             {rooms.map((room) => (
+diff --git a/packages/client/src/components/Lobby.tsx b/packages/client/src/components/Lobby.tsx
+index e3aef05..97fbec7 100644
+--- a/packages/client/src/components/Lobby.tsx
++++ b/packages/client/src/components/Lobby.tsx
+@@ -1,6 +1,6 @@
+ import { addBot, kickPlayer, leaveRoom, send, updateSettings, useStore } from '../net.js';
+ import type { GameSettings } from '@rentier/shared';
+-import { TOKEN_GLYPHS } from '../lib.js';
++import { initial } from '../lib.js';
+ 
+ const TOGGLES: { key: keyof GameSettings; label: string; hint: string }[] = [
+   { key: 'auctionsEnabled', label: 'Auctions', hint: 'Declined properties go under the hammer.' },
+@@ -48,7 +48,7 @@ export default function Lobby() {
+             {game.players.map((p) => (
+               <li key={p.id} className="seat">
+                 <span className="chip" style={{ background: p.color }}>
+-                  {TOKEN_GLYPHS[p.token] ?? '●'}
++                  {initial(p.name)}
+                 </span>
+                 <span className="seat-name">
+                   {p.name}
+diff --git a/packages/client/src/components/PlayerList.tsx b/packages/client/src/components/PlayerList.tsx
+index bf32dab..c5baf0a 100644
+--- a/packages/client/src/components/PlayerList.tsx
++++ b/packages/client/src/components/PlayerList.tsx
+@@ -1,5 +1,5 @@
+ import { netWorth, ownedTileIds, tileAt, type GameState } from '@rentier/shared';
+-import { TOKEN_GLYPHS, money, tileColor } from '../lib.js';
++import { initial, money, tileColor } from '../lib.js';
+ 
+ interface Props {
+   state: GameState;
+@@ -18,10 +18,11 @@ export default function PlayerList({ state, myId, onTrade }: Props) {
+           <div
+             key={p.id}
+             className={`player-card${p.id === current?.id ? ' active' : ''}${p.bankrupt ? ' out' : ''}`}
++            style={{ '--pc': p.color } as React.CSSProperties}
+           >
+             <div className="player-top">
+               <span className="chip" style={{ background: p.color }}>
+-                {TOKEN_GLYPHS[p.token] ?? '●'}
++                {initial(p.name)}
+               </span>
+               <span className="player-name">
+                 {p.name}
+@@ -32,7 +33,7 @@ export default function PlayerList({ state, myId, onTrade }: Props) {
+               <span className="player-cash">{p.bankrupt ? 'out' : money(p.cash)}</span>
+             </div>
+             <div className="player-meta">
+-              <span>{tiles.length} deeds</span>
++              <span>{tiles.length} {tiles.length === 1 ? 'deed' : 'deeds'}</span>
+               <span>net {money(netWorth(state, p.id))}</span>
+               {p.inHolding && <span className="warn">in holding</span>}
+               {p.reprieveCards > 0 && <span>{p.reprieveCards} reprieve</span>}
+diff --git a/packages/client/src/lib.ts b/packages/client/src/lib.ts
+index 3379b4e..faf1fc2 100644
+--- a/packages/client/src/lib.ts
++++ b/packages/client/src/lib.ts
+@@ -67,6 +67,11 @@ export function secondsLeft(deadline: number | null): number | null {
+   return Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+ }
+ 
++/** Board tokens show the player's initial — the clearest marker at small sizes. */
++export function initial(name: string): string {
++  return (name.trim()[0] ?? '?').toUpperCase();
++}
++
+ export const TOKEN_GLYPHS: Record<string, string> = {
+   rocket: '▲',
+   anchor: '⚓',
+diff --git a/packages/client/src/net.ts b/packages/client/src/net.ts
+index bea9f72..cdc8f7f 100644
+--- a/packages/client/src/net.ts
++++ b/packages/client/src/net.ts
+@@ -11,7 +11,17 @@ import type {
+ } from '@rentier/shared';
+ 
+ const SERVER_URL = import.meta.env.VITE_SERVER_URL ?? '';
+-const STORAGE_KEY = 'rentier.session.v1';
++
++/**
++ * The seat token lives in sessionStorage, NOT localStorage, and this matters:
++ * sessionStorage is per browser tab. Refreshing a tab keeps your seat, but
++ * opening a second tab gives you a clean slate so you can join the same table
++ * as a different player. With localStorage the second tab would silently
++ * reconnect as the first tab's player and knock it offline.
++ */
++const SESSION_KEY = 'rentier.session.v1';
++/** The display name is a convenience, so it is fine to share across tabs. */
++const NAME_KEY = 'rentier.name.v1';
+ 
+ export interface StoredSession {
+   roomId: string;
+@@ -21,7 +31,7 @@ export interface StoredSession {
+ 
+ function readSession(): StoredSession | null {
+   try {
+-    const raw = localStorage.getItem(STORAGE_KEY);
++    const raw = sessionStorage.getItem(SESSION_KEY);
+     return raw ? (JSON.parse(raw) as StoredSession) : null;
+   } catch {
+     return null;
+@@ -30,13 +40,29 @@ function readSession(): StoredSession | null {
+ 
+ function writeSession(session: StoredSession | null): void {
+   try {
+-    if (session) localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
+-    else localStorage.removeItem(STORAGE_KEY);
++    if (session) sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
++    else sessionStorage.removeItem(SESSION_KEY);
+   } catch {
+     /* storage may be unavailable; the app still works, just without reconnect */
+   }
+ }
+ 
++function readName(): string {
++  try {
++    return localStorage.getItem(NAME_KEY) ?? '';
++  } catch {
++    return '';
++  }
++}
++
++function writeName(name: string): void {
++  try {
++    localStorage.setItem(NAME_KEY, name);
++  } catch {
++    /* ignore */
++  }
++}
++
+ export interface ClientStore {
+   connected: boolean;
+   roomId: string | null;
+@@ -61,7 +87,7 @@ let state: ClientStore = {
+   rooms: [],
+   chat: [],
+   error: null,
+-  playerName: readSession()?.playerName ?? '',
++  playerName: readSession()?.playerName ?? readName(),
+   joining: false,
+ };
+ 
+@@ -110,6 +136,10 @@ socket.on('connect', () => {
+ 
+ socket.on('disconnect', () => set({ connected: false }));
+ 
++socket.on('connect_error', () => {
++  set({ connected: false, joining: false });
++});
++
+ socket.on('room:list', (rooms) => set({ rooms }));
+ 
+ socket.on('room:joined', ({ roomId, playerId, token }) => {
+@@ -144,6 +174,7 @@ socket.on('room:left', () => {
+ 
+ export function setPlayerName(name: string): void {
+   set({ playerName: name });
++  writeName(name);
+   const session = readSession();
+   if (session) writeSession({ ...session, playerName: name });
+ }
+diff --git a/packages/client/src/styles/index.css b/packages/client/src/styles/index.css
+index 83f1f09..80ca361 100644
+--- a/packages/client/src/styles/index.css
++++ b/packages/client/src/styles/index.css
+@@ -1,367 +1,444 @@
+-/* ---------------------------------------------------------------- tokens */
++/* ================================================================ tokens */
+ :root {
+-  --bg: #0b0f18;
+-  --bg-2: #121826;
+-  --panel: #161d2d;
+-  --panel-2: #1c2436;
+-  --line: #26304a;
+-  --text: #e6ebf5;
+-  --muted: #8e9bb5;
+-  --accent: #54d98c;
+-  --accent-2: #3aa8ff;
+-  --danger: #ff6b6b;
+-  --warn: #f5b942;
+-  --radius: 10px;
+-  --shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+-  color-scheme: dark;
++  --bg: #eef3fb;
++  --bg-2: #ffffff;
++  --panel: #ffffff;
++  --panel-2: #f4f7fc;
++  --line: #d9e2f0;
++  --line-strong: #b9c8de;
++  --text: #16202f;
++  --muted: #64748b;
++  --accent: #16a34a;
++  --accent-soft: #dcfce7;
++  --blue: #2563eb;
++  --danger: #dc2626;
++  --warn: #d97706;
++  --radius: 14px;
++  --shadow-sm: 0 1px 2px rgba(16, 32, 60, 0.07), 0 2px 8px rgba(16, 32, 60, 0.06);
++  --shadow: 0 6px 24px rgba(16, 32, 60, 0.12);
++  color-scheme: light;
+ }
+ 
+ * { box-sizing: border-box; }
+-
+ html, body, #root { height: 100%; }
+ 
+ body {
+   margin: 0;
+-  background: radial-gradient(1200px 800px at 50% -10%, #16203a 0%, var(--bg) 60%);
++  background:
++    radial-gradient(900px 500px at 15% -5%, #dbeafe 0%, transparent 60%),
++    radial-gradient(900px 500px at 90% 0%, #dcfce7 0%, transparent 55%),
++    var(--bg);
+   color: var(--text);
+-  font: 14px/1.5 ui-sans-serif, -apple-system, "Segoe UI", Roboto, Inter, system-ui, sans-serif;
++  font: 15px/1.5 ui-sans-serif, -apple-system, "Segoe UI", Roboto, Inter, system-ui, sans-serif;
+   -webkit-font-smoothing: antialiased;
+ }
+ 
+-h1, h2, h3 { margin: 0 0 10px; font-weight: 650; letter-spacing: -0.01em; }
+-h1 { font-size: 26px; }
+-h2 { font-size: 15px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+-h3 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
++h1, h2, h3 { margin: 0 0 12px; font-weight: 750; letter-spacing: -0.02em; }
++h1 { font-size: 30px; }
++h2 { font-size: 16px; }
++h3 { font-size: 14px; }
+ p { margin: 0 0 10px; }
+ 
+ .muted { color: var(--muted); }
+-.small { font-size: 12px; }
+-.warn { color: var(--warn); }
++.small { font-size: 13px; }
++.warn { color: var(--warn); font-weight: 600; }
+ .app { min-height: 100%; }
+ 
+-/* --------------------------------------------------------------- controls */
++/* ============================================================== controls */
+ .btn {
+   appearance: none;
+-  border: 1px solid var(--line);
+-  background: var(--panel-2);
++  border: 2px solid var(--line-strong);
++  background: #fff;
+   color: var(--text);
+-  padding: 9px 14px;
+-  border-radius: 8px;
++  padding: 11px 18px;
++  border-radius: 11px;
+   font: inherit;
+-  font-weight: 550;
++  font-weight: 700;
+   cursor: pointer;
+-  transition: background 0.14s, border-color 0.14s, transform 0.06s;
+-}
+-.btn:hover:not(:disabled) { background: #24304a; border-color: #38456a; }
+-.btn:active:not(:disabled) { transform: translateY(1px); }
+-.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+-.btn.primary { background: var(--accent); border-color: var(--accent); color: #06210f; }
+-.btn.primary:hover:not(:disabled) { background: #6ce7a0; }
+-.btn.danger { background: transparent; border-color: var(--danger); color: var(--danger); }
+-.btn.ghost { background: transparent; }
+-.btn.small { padding: 5px 10px; font-size: 12px; }
++  box-shadow: var(--shadow-sm);
++  transition: transform 0.08s, box-shadow 0.14s, background 0.14s;
++}
++.btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: var(--shadow); }
++.btn:active:not(:disabled) { transform: translateY(1px); box-shadow: none; }
++.btn:disabled { opacity: 0.42; cursor: not-allowed; box-shadow: none; }
++.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
++.btn.primary:hover:not(:disabled) { background: #15803d; }
++.btn.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
++.btn.ghost { background: transparent; border-color: var(--line); box-shadow: none; }
++.btn.small { padding: 6px 12px; font-size: 13px; border-width: 1px; }
+ .btn.full { width: 100%; }
++.btn.big { padding: 14px 26px; font-size: 17px; border-radius: 13px; }
+ 
+ .input {
+   width: 100%;
+-  background: #0e1420;
+-  border: 1px solid var(--line);
++  background: #fff;
++  border: 2px solid var(--line);
+   color: var(--text);
+-  padding: 9px 11px;
+-  border-radius: 8px;
++  padding: 11px 13px;
++  border-radius: 11px;
+   font: inherit;
+-  margin-bottom: 10px;
++  margin-bottom: 12px;
+ }
+-.input:focus { outline: 2px solid var(--accent-2); outline-offset: 1px; }
+-.input.code { text-transform: uppercase; letter-spacing: 0.2em; font-weight: 700; }
++.input:focus { outline: none; border-color: var(--blue); }
++.input.code { text-transform: uppercase; letter-spacing: 0.24em; font-weight: 800; text-align: center; font-size: 20px; }
+ 
+-.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+-.check { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 10px; cursor: pointer; }
+-.check input { margin-top: 3px; }
+-.check em { display: block; font-style: normal; color: var(--muted); font-size: 12px; }
+-.field { display: block; margin-bottom: 10px; }
+-.field > span { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
++.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
++.check { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 12px; cursor: pointer; }
++.check input { margin-top: 4px; width: 17px; height: 17px; accent-color: var(--accent); }
++.check em { display: block; font-style: normal; color: var(--muted); font-size: 13px; }
++.field { display: block; margin-bottom: 12px; }
++.field > span { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px; font-weight: 600; }
+ 
+ .card {
+   background: var(--panel);
+   border: 1px solid var(--line);
+-  border-radius: var(--radius);
+-  padding: 18px;
++  border-radius: 18px;
++  padding: 22px;
++  box-shadow: var(--shadow-sm);
+ }
+ 
+-.brand { font-weight: 750; letter-spacing: -0.02em; font-size: 20px; }
+-.brand.small { font-size: 16px; }
++.brand { font-weight: 850; letter-spacing: -0.03em; font-size: 24px; }
++.brand.small { font-size: 19px; }
+ .brand .dot, h1 .dot {
+-  display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+-  background: var(--accent); margin-left: 4px; vertical-align: middle;
++  display: inline-block; width: 9px; height: 9px; border-radius: 50%;
++  background: var(--accent); margin-left: 5px; vertical-align: middle;
+ }
+ 
+ .chip {
+   display: inline-flex; align-items: center; justify-content: center;
+-  width: 24px; height: 24px; border-radius: 7px;
+-  font-size: 12px; color: #06210f; font-weight: 700; flex: none;
++  width: 30px; height: 30px; border-radius: 50%;
++  font-size: 14px; color: #fff; font-weight: 800; flex: none;
++  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.18);
+ }
+-.chip.sm { width: 14px; height: 14px; border-radius: 4px; }
+-.chip.xs { width: 9px; height: 9px; border-radius: 3px; }
++.chip.sm { width: 18px; height: 18px; font-size: 10px; }
++.chip.xs { width: 12px; height: 12px; font-size: 8px; }
+ 
+ .tag {
+-  font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;
+-  padding: 1px 5px; border-radius: 4px; margin-left: 6px;
+-  background: #263149; color: var(--muted);
++  font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 800;
++  padding: 2px 7px; border-radius: 999px; margin-left: 7px;
++  background: #e2e8f0; color: #475569;
+ }
+-.tag.you { background: #1d3d2c; color: var(--accent); }
+-.tag.bot { background: #26314a; color: var(--accent-2); }
+-.tag.off { background: #3a2530; color: var(--danger); }
++.tag.you { background: var(--accent-soft); color: #15803d; }
++.tag.bot { background: #dbeafe; color: #1d4ed8; }
++.tag.off { background: #fee2e2; color: #b91c1c; }
+ 
+ .code-chip {
+   font-family: ui-monospace, "SF Mono", Menlo, monospace;
+-  letter-spacing: 0.2em; background: #0e1420; border: 1px solid var(--line);
+-  padding: 3px 9px; border-radius: 6px;
++  letter-spacing: 0.24em; background: #fff; border: 2px dashed var(--line-strong);
++  padding: 5px 14px; border-radius: 10px; font-weight: 800; font-size: 18px; color: var(--blue);
+ }
+ 
+ .banner {
+   position: fixed; top: 0; left: 0; right: 0; z-index: 60;
+-  background: var(--warn); color: #24180a; text-align: center; padding: 6px; font-weight: 600;
++  background: var(--warn); color: #fff; text-align: center; padding: 9px; font-weight: 700;
+ }
+ .toast {
+-  position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%);
+-  background: #33202a; border: 1px solid var(--danger); color: #ffd9d9;
+-  padding: 10px 16px; border-radius: 9px; z-index: 80; cursor: pointer; box-shadow: var(--shadow);
+-}
+-
+-/* ------------------------------------------------------------------- home */
+-.home { max-width: 1000px; margin: 0 auto; padding: 56px 20px 40px; }
+-.home-head { text-align: center; margin-bottom: 30px; }
+-.home-head p { color: var(--muted); max-width: 520px; margin: 0 auto; }
+-.home-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+-.home-foot { margin-top: 26px; text-align: center; font-size: 12px; }
+-.rooms-head { display: flex; justify-content: space-between; align-items: center; margin-top: 18px; }
+-.room-list { display: flex; flex-direction: column; gap: 6px; max-height: 260px; overflow-y: auto; }
++  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
++  background: var(--danger); color: #fff; font-weight: 600;
++  padding: 12px 20px; border-radius: 12px; z-index: 80; cursor: pointer; box-shadow: var(--shadow);
++}
++
++/* ================================================================== home */
++.home { max-width: 1040px; margin: 0 auto; padding: 60px 20px 40px; }
++.home-head { text-align: center; margin-bottom: 34px; }
++.home-head p { color: var(--muted); max-width: 540px; margin: 0 auto; font-size: 17px; }
++.home-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
++.home-foot { margin-top: 30px; text-align: center; font-size: 13px; }
++.rooms-head { display: flex; justify-content: space-between; align-items: center; margin-top: 22px; }
++.room-list { display: flex; flex-direction: column; gap: 8px; max-height: 250px; overflow-y: auto; }
+ .room-row {
+-  display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center;
+-  background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px;
+-  padding: 9px 12px; color: var(--text); cursor: pointer; font: inherit; text-align: left;
++  display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: center;
++  background: var(--panel-2); border: 2px solid var(--line); border-radius: 12px;
++  padding: 12px 14px; color: var(--text); cursor: pointer; font: inherit; text-align: left; font-weight: 600;
+ }
+-.room-row:hover:not(:disabled) { border-color: var(--accent); }
++.room-row:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-soft); }
+ .room-row:disabled { opacity: 0.45; cursor: not-allowed; }
+-.room-meta { color: var(--muted); font-size: 12px; }
+-.room-code { font-family: ui-monospace, monospace; letter-spacing: 0.12em; color: var(--accent); }
+-
+-/* ------------------------------------------------------------------ lobby */
+-.lobby { max-width: 1000px; margin: 0 auto; padding: 40px 20px; }
+-.lobby-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 22px; }
+-.lobby-grid { display: grid; grid-template-columns: 1fr 1.2fr; gap: 18px; align-items: start; }
+-.seat-list { list-style: none; margin: 0 0 14px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+-.seat { display: flex; gap: 10px; align-items: center; background: var(--panel-2); border-radius: 8px; padding: 8px 10px; }
+-.seat-name { flex: 1; font-weight: 550; }
+-.settings.numbers { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; margin-top: 14px; }
+-
+-/* ------------------------------------------------------------------- game */
++.room-meta { color: var(--muted); font-size: 13px; font-weight: 500; }
++.room-code { font-family: ui-monospace, monospace; letter-spacing: 0.14em; color: var(--blue); font-weight: 800; }
++
++.hint {
++  background: #fffbeb; border: 1px solid #fde68a; color: #92400e;
++  border-radius: 12px; padding: 12px 14px; font-size: 13px; margin-top: 14px;
++}
++
++/* ================================================================= lobby */
++.lobby { max-width: 1040px; margin: 0 auto; padding: 44px 20px; }
++.lobby-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }
++.lobby-grid { display: grid; grid-template-columns: 1fr 1.15fr; gap: 20px; align-items: start; }
++.seat-list { list-style: none; margin: 0 0 16px; padding: 0; display: flex; flex-direction: column; gap: 10px; }
++.seat {
++  display: flex; gap: 12px; align-items: center;
++  background: var(--panel-2); border: 2px solid var(--line); border-radius: 12px; padding: 11px 13px;
++}
++.seat-name { flex: 1; font-weight: 700; }
++.settings.numbers { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; margin-top: 16px; }
++
++/* ================================================================== game */
+ .game { height: 100vh; display: flex; flex-direction: column; }
+ .game-head {
+-  display: flex; align-items: center; gap: 12px;
+-  padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--bg-2);
++  display: flex; align-items: center; gap: 14px;
++  padding: 12px 20px; border-bottom: 1px solid var(--line); background: #fff;
+ }
+ .game-head .btn { margin-left: auto; }
+ .game-main {
+   flex: 1; min-height: 0;
+-  display: grid; grid-template-columns: 280px minmax(0, 1fr) 320px; gap: 12px; padding: 12px;
++  display: grid; grid-template-columns: 250px minmax(0, 1fr) 290px; gap: 14px; padding: 14px;
+ }
+ .col { min-height: 0; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
+-.col.centre { overflow: hidden; }
++.col.centre { overflow: hidden; gap: 14px; }
+ 
+ .panel {
+   background: var(--panel); border: 1px solid var(--line);
+-  border-radius: var(--radius); padding: 12px;
++  border-radius: var(--radius); padding: 14px; box-shadow: var(--shadow-sm);
+ }
+ 
+-/* ------------------------------------------------------------------ board */
++/* ================================================================= board */
+ .board-wrap { flex: 1; min-height: 0; display: grid; place-items: center; }
+ .board {
+-  --size: min(calc(100vh - 190px), 100%);
+-  width: var(--size); height: var(--size);
++  width: min(100%, calc(100vh - 168px));
++  aspect-ratio: 1 / 1;
+   display: grid;
+-  grid-template-columns: 1.45fr repeat(9, 1fr) 1.45fr;
+-  grid-template-rows: 1.45fr repeat(9, 1fr) 1.45fr;
+-  gap: 2px; padding: 8px;
+-  background: var(--panel); border: 1px solid var(--line);
+-  border-radius: 12px; box-shadow: var(--shadow);
++  grid-template-columns: 1.5fr repeat(9, 1fr) 1.5fr;
++  grid-template-rows: 1.5fr repeat(9, 1fr) 1.5fr;
++  gap: 3px; padding: 10px;
++  background: #fff; border: 3px solid var(--line-strong);
++  border-radius: 18px; box-shadow: var(--shadow);
+ }
+ 
+ .tile {
+   position: relative; overflow: hidden;
+-  background: var(--panel-2); border: 1px solid var(--line); border-radius: 4px;
+-  padding: 3px; color: var(--text); font: inherit; cursor: default; text-align: center;
++  background: var(--tile-bg, #fff);
++  border: 1.5px solid var(--line-strong); border-radius: 7px;
++  padding: 0; color: var(--text); font: inherit; text-align: center;
++  display: flex; cursor: default;
++}
++.tile.ownable { cursor: pointer; }
++.tile.ownable:hover { border-color: var(--blue); }
++.tile.selected { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.35); }
++.tile.mortgaged .tile-head { filter: grayscale(0.85); }
++
++/* The coloured head sits on the tile's inner edge, the body on the outer. */
++.tile.edge-bottom { flex-direction: column; }
++.tile.edge-top { flex-direction: column-reverse; }
++.tile.edge-left { flex-direction: row-reverse; }
++.tile.edge-right { flex-direction: row; }
++.tile.corner, .tile.special.edge-bottom, .tile.special.edge-top { flex-direction: column; }
++
++.tile-head { flex: 0 0 30%; position: relative; display: flex; align-items: center; justify-content: center; }
++.tile.edge-left .tile-head, .tile.edge-right .tile-head { flex-basis: 22%; }
++
++.tile-body {
++  flex: 1 1 auto; min-width: 0; min-height: 0; overflow: hidden;
+   display: flex; flex-direction: column; align-items: center; justify-content: center;
++  gap: 1px; padding: 2px 3px calc(2px + clamp(11px, 1.15vw, 19px));
+ }
+-.tile.selected { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+-.tile.mortgaged { opacity: 0.62; }
+-.tile-band { position: absolute; }
+-.tile.edge-bottom .tile-band { top: 0; left: 0; right: 0; height: 18%; }
+-.tile.edge-top .tile-band { bottom: 0; left: 0; right: 0; height: 18%; }
+-.tile.edge-left .tile-band { right: 0; top: 0; bottom: 0; width: 18%; }
+-.tile.edge-right .tile-band { left: 0; top: 0; bottom: 0; width: 18%; }
+-
+-.tile-owner { position: absolute; top: 2px; right: 2px; width: 7px; height: 7px; border-radius: 2px; }
+-.tile-body { display: flex; flex-direction: column; gap: 1px; padding: 12% 2px 0; z-index: 1; }
+ .tile-name {
+-  font-size: clamp(6px, 0.72vw, 10px); line-height: 1.15; font-weight: 600;
+-  overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
++  font-size: clamp(7px, 0.7vw, 12px); line-height: 1.05; font-weight: 750;
++  overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
++  /* `anywhere` only breaks a word that genuinely cannot fit, so short names
++     stay whole and long ones wrap instead of being clipped at the edge. */
++  overflow-wrap: anywhere; max-width: 100%; width: 100%;
++}
++.tile-price { font-size: clamp(7px, 0.62vw, 11px); color: #475569; font-weight: 700; white-space: nowrap; }
++.tile-glyph { font-size: clamp(13px, 1.35vw, 24px); line-height: 1; }
++/* Side-column event tiles are short: shrink the glyph so the label still fits. */
++.tile.special.edge-left .tile-glyph,
++.tile.special.edge-right .tile-glyph { font-size: clamp(10px, 0.95vw, 16px); }
++.tile.special:not(.corner) .tile-body { padding-bottom: calc(2px + clamp(9px, 0.95vw, 15px)); }
++.tile.corner .tile-name { font-size: clamp(9px, 0.9vw, 15px); font-weight: 850; letter-spacing: 0.02em; -webkit-line-clamp: 2; }
++.tile.corner .tile-glyph { font-size: clamp(20px, 2.2vw, 40px); }
++.tile.corner .tile-body { gap: 4px; padding-bottom: clamp(14px, 1.5vw, 26px); }
++
++.tile-buildings {
++  color: #fff; font-size: clamp(7px, 0.68vw, 11px); font-weight: 800; letter-spacing: 1px;
++  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+ }
+-.tile-price { font-size: clamp(6px, 0.6vw, 9px); color: var(--muted); }
+-.tile-glyph { font-size: clamp(10px, 1.1vw, 16px); color: var(--muted); }
+-.tile-buildings { position: absolute; bottom: 2px; left: 0; right: 0; font-size: 8px; color: var(--accent); letter-spacing: 1px; }
+-.tile-buildings .hotel { color: var(--danger); font-weight: 800; }
+-.tile-mortgage { position: absolute; top: 40%; font-size: 7px; letter-spacing: 1px; color: var(--warn); }
++.tile-buildings .hotel { background: #b91c1c; padding: 1px 4px; border-radius: 4px; letter-spacing: 0.5px; }
++.tile-mortgage { font-size: clamp(6px, 0.55vw, 9px); font-weight: 800; color: var(--danger); letter-spacing: 0.5px; }
++
++.tile-owner-bar { position: absolute; z-index: 2; }
++.tile.edge-bottom .tile-owner-bar { bottom: 0; left: 0; right: 0; height: 6px; }
++.tile.edge-top .tile-owner-bar { top: 0; left: 0; right: 0; height: 6px; }
++.tile.edge-left .tile-owner-bar { left: 0; top: 0; bottom: 0; width: 6px; }
++.tile.edge-right .tile-owner-bar { right: 0; top: 0; bottom: 0; width: 6px; }
+ 
+ .tile-tokens {
+-  position: absolute; inset: auto 2px 2px 2px;
+-  display: flex; flex-wrap: wrap; gap: 1px; justify-content: center; z-index: 2;
++  position: absolute; inset: auto 2px 2px 2px; z-index: 3;
++  display: flex; flex-wrap: wrap-reverse; gap: 2px; justify-content: center;
+ }
+ .token {
+-  width: clamp(9px, 1vw, 14px); height: clamp(9px, 1vw, 14px);
+-  border-radius: 50%; font-size: 7px; color: #06210f;
+-  display: grid; place-items: center; border: 1px solid rgba(0,0,0,0.35);
++  width: clamp(13px, 1.3vw, 21px); height: clamp(13px, 1.3vw, 21px);
++  border-radius: 50%; font-size: clamp(9px, 0.85vw, 13px); color: #fff; font-weight: 800;
++  display: grid; place-items: center;
++  border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+ }
+-.token.active { box-shadow: 0 0 0 2px var(--accent); }
++.token.active { border-color: #111827; transform: scale(1.12); }
+ 
+ .board-centre {
+   grid-column: 2 / 11; grid-row: 2 / 11;
+-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+-  background: linear-gradient(160deg, #131b2c, #0e1420);
+-  border-radius: 8px; padding: 16px; text-align: center;
++  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px;
++  background: linear-gradient(150deg, #f8fbff, #eef4ff);
++  border-radius: 14px; padding: 20px; text-align: center; margin: 3px;
++}
++.centre-turn {
++  display: flex; align-items: center; gap: 9px; font-weight: 800; font-size: 18px;
++  background: #fff; border: 2px solid var(--line); border-radius: 999px; padding: 7px 18px;
++  box-shadow: var(--shadow-sm);
+ }
+-.centre-turn { display: flex; align-items: center; gap: 7px; font-weight: 600; }
+-.centre-pot { color: var(--warn); font-size: 12px; }
++.centre-pot { color: var(--warn); font-weight: 800; }
+ .centre-card {
+-  max-width: 320px; background: var(--panel); border: 1px solid var(--line);
+-  border-left: 3px solid var(--accent-2); border-radius: 8px; padding: 10px 12px; font-size: 12px;
+-}
+-.centre-card.fortune { border-left-color: var(--warn); }
+-.deck-label { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); margin-bottom: 3px; }
+-
+-.dice { display: flex; gap: 10px; }
+-.dice.empty { color: var(--muted); }
+-.die { width: 40px; height: 40px; }
+-.die rect { fill: #f3f6fb; }
+-.die .pip { fill: #10192b; }
+-
+-/* --------------------------------------------------------------- players */
+-.players { display: flex; flex-direction: column; gap: 8px; }
+-.player-card { background: var(--panel-2); border: 1px solid transparent; border-radius: 8px; padding: 9px; }
+-.player-card.active { border-color: var(--accent); }
+-.player-card.out { opacity: 0.45; }
+-.player-top { display: flex; align-items: center; gap: 8px; }
+-.player-name { flex: 1; font-weight: 600; }
+-.player-cash { font-variant-numeric: tabular-nums; color: var(--accent); font-weight: 650; }
+-.player-meta { display: flex; gap: 10px; font-size: 11px; color: var(--muted); margin-top: 4px; flex-wrap: wrap; }
+-.deed-strip { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 6px; }
+-.deed-dot { width: 11px; height: 6px; border-radius: 2px; }
+-.deed-dot.mtg { opacity: 0.35; }
+-
+-/* ------------------------------------------------------------- action bar */
++  max-width: 340px; background: #fff; border: 2px solid var(--line);
++  border-top: 5px solid var(--blue); border-radius: 12px; padding: 12px 16px;
++  font-size: 14px; box-shadow: var(--shadow-sm);
++}
++.centre-card.fortune { border-top-color: var(--warn); }
++.deck-label {
++  display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 0.12em;
++  color: var(--muted); margin-bottom: 5px; font-weight: 800;
++}
++
++.dice { display: flex; gap: 14px; }
++.dice.empty { color: var(--muted); font-size: 22px; }
++.die { width: 54px; height: 54px; filter: drop-shadow(0 3px 6px rgba(16, 32, 60, 0.22)); }
++.die rect { fill: #fff; stroke: #cbd5e1; stroke-width: 3; }
++.die .pip { fill: #1e293b; }
++
++/* =============================================================== players */
++.players { display: flex; flex-direction: column; gap: 10px; padding: 0; background: none; border: 0; box-shadow: none; }
++.player-card {
++  background: #fff; border: 2px solid var(--line); border-left: 7px solid var(--pc, var(--line));
++  border-radius: 12px; padding: 11px; box-shadow: var(--shadow-sm);
++}
++.player-card.active { border-color: var(--accent); border-left-color: var(--pc); background: var(--accent-soft); }
++.player-card.out { opacity: 0.5; }
++.player-top { display: flex; align-items: center; gap: 9px; }
++.player-name { flex: 1; font-weight: 750; font-size: 15px; }
++.player-cash { font-variant-numeric: tabular-nums; color: var(--accent); font-weight: 850; font-size: 16px; }
++.player-meta { display: flex; gap: 10px; font-size: 12px; color: var(--muted); margin-top: 6px; flex-wrap: wrap; font-weight: 600; }
++.deed-strip { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 8px; }
++.deed-dot { width: 15px; height: 9px; border-radius: 3px; border: 1px solid rgba(0, 0, 0, 0.15); }
++.deed-dot.mtg { opacity: 0.3; }
++
++/* ============================================================ action bar */
+ .actionbar {
+-  background: var(--panel); border: 1px solid var(--line);
+-  border-radius: var(--radius); padding: 10px 14px;
+-  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
++  background: #fff; border: 2px solid var(--line);
++  border-radius: var(--radius); padding: 12px 18px;
++  display: flex; align-items: center; gap: 16px; flex-wrap: wrap; box-shadow: var(--shadow-sm);
+ }
+-.actionbar-status { display: flex; align-items: center; gap: 10px; }
+-.status-text { font-weight: 600; }
++.actionbar.mine { border-color: var(--accent); background: var(--accent-soft); }
++.actionbar-status { display: flex; align-items: center; gap: 12px; }
++.status-text { font-weight: 800; font-size: 17px; }
+ .timer {
+-  font-variant-numeric: tabular-nums; background: #0e1420; border: 1px solid var(--line);
+-  padding: 2px 8px; border-radius: 6px; font-size: 12px; color: var(--muted);
++  font-variant-numeric: tabular-nums; background: #fff; border: 2px solid var(--line);
++  padding: 3px 11px; border-radius: 999px; font-size: 14px; color: var(--muted); font-weight: 800;
+ }
+-.timer.urgent { color: var(--danger); border-color: var(--danger); }
+-.actionbar-buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-left: auto; align-items: center; }
+-.debt-note { color: var(--warn); font-size: 12px; max-width: 320px; }
++.timer.urgent { color: #fff; background: var(--danger); border-color: var(--danger); }
++.actionbar-buttons { display: flex; gap: 10px; flex-wrap: wrap; margin-left: auto; align-items: center; }
++.debt-note { color: var(--warn); font-size: 13px; max-width: 320px; font-weight: 600; }
+ 
+-/* -------------------------------------------------------------- log/chat */
+-.log { flex: 1; min-height: 200px; display: flex; flex-direction: column; }
+-.tabs { display: flex; gap: 4px; margin-bottom: 8px; }
++/* ============================================================== log/chat */
++.log { flex: 1; min-height: 220px; display: flex; flex-direction: column; }
++.tabs { display: flex; gap: 6px; margin-bottom: 10px; }
+ .tabs button {
+-  flex: 1; background: transparent; border: 1px solid var(--line); color: var(--muted);
+-  padding: 5px; border-radius: 6px; font: inherit; font-size: 12px; cursor: pointer;
++  flex: 1; background: var(--panel-2); border: 2px solid var(--line); color: var(--muted);
++  padding: 7px; border-radius: 9px; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer;
+ }
+-.tabs button.active { background: var(--panel-2); color: var(--text); border-color: var(--accent); }
+-.log-scroll { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; padding-right: 4px; }
+-.log-line, .chat-line { display: flex; gap: 7px; align-items: baseline; font-size: 12px; line-height: 1.4; }
++.tabs button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
++.log-scroll { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding-right: 4px; }
++.log-line, .chat-line { display: flex; gap: 8px; align-items: baseline; font-size: 13px; line-height: 1.45; }
+ .log-line .chip, .chat-line .chip { flex: none; align-self: center; }
+-.log-line.money { color: #cfe9d8; }
+-.log-line.card { color: #ffe6b0; }
++.log-line.money { color: #15803d; font-weight: 600; }
++.log-line.card { color: #b45309; font-weight: 600; }
+ .log-line.system { color: var(--muted); }
+-.log-line.trade { color: #cfe0ff; }
+-.chat-form { display: flex; gap: 6px; margin-top: 8px; }
++.log-line.trade { color: #1d4ed8; font-weight: 600; }
++.log-line.build { color: #7c3aed; font-weight: 600; }
++.chat-form { display: flex; gap: 8px; margin-top: 10px; }
+ .chat-form .input { margin: 0; }
+ 
+-/* --------------------------------------------------------------- detail */
++/* ================================================================ detail */
+ .detail { padding: 0; overflow: hidden; }
+-.detail-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; color: #06210f; font-weight: 700; }
+-.detail-head .x { background: none; border: 0; font-size: 18px; cursor: pointer; color: inherit; line-height: 1; }
+-.detail-body { padding: 10px 12px; }
+-.detail-row { display: flex; justify-content: space-between; font-size: 12px; padding: 3px 0; border-bottom: 1px dashed #212b42; }
+-.detail-row.current { color: var(--accent); font-weight: 650; }
+-.rent-table { margin: 8px 0; }
+-
+-/* --------------------------------------------------------------- trades */
+-.trades { display: flex; flex-direction: column; gap: 8px; }
+-.trade-offer { background: var(--panel-2); border-radius: 8px; padding: 9px; }
+-.trade-offer-body { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 6px 0; }
+-.side-summary { font-size: 12px; }
+-.trade-note { font-size: 12px; color: var(--muted); font-style: italic; }
+-
+-/* --------------------------------------------------------------- modals */
++.detail-head {
++  display: flex; align-items: center; justify-content: space-between;
++  padding: 12px 14px; color: #fff; font-weight: 800; font-size: 16px;
++  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
++}
++.detail-head .x { background: none; border: 0; font-size: 22px; cursor: pointer; color: inherit; line-height: 1; }
++.detail-body { padding: 12px 14px; }
++.detail-row {
++  display: flex; justify-content: space-between; font-size: 13px;
++  padding: 5px 0; border-bottom: 1px solid #eef2f7; font-weight: 600;
++}
++.detail-row.current { color: var(--accent); background: var(--accent-soft); border-radius: 6px; padding: 5px 7px; }
++.rent-table { margin: 10px 0; }
++
++/* ================================================================ trades */
++.trades { display: flex; flex-direction: column; gap: 10px; }
++.trade-offer { background: var(--panel-2); border: 2px solid var(--line); border-radius: 12px; padding: 11px; }
++.trade-offer-body { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 8px 0; }
++.side-summary { font-size: 13px; font-weight: 600; }
++.trade-note { font-size: 13px; color: var(--muted); font-style: italic; }
++
++/* ================================================================ modals */
+ .modal-backdrop {
+-  position: fixed; inset: 0; background: rgba(6, 10, 18, 0.72);
+-  display: grid; place-items: center; z-index: 50; padding: 20px; backdrop-filter: blur(3px);
++  position: fixed; inset: 0; background: rgba(15, 26, 45, 0.5);
++  display: grid; place-items: center; z-index: 50; padding: 20px;
+ }
+ .modal {
+-  background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+-  padding: 20px; width: min(680px, 100%); max-height: 86vh; overflow-y: auto; box-shadow: var(--shadow);
++  background: #fff; border-radius: 18px;
++  padding: 24px; width: min(700px, 100%); max-height: 88vh; overflow-y: auto; box-shadow: var(--shadow);
+ }
+-.modal header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+-.modal header h2 { margin: 0; }
+-.modal.auction { width: min(420px, 100%); }
+-.modal.over { width: min(460px, 100%); text-align: center; }
++.modal header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
++.modal header h2 { margin: 0; font-size: 22px; }
++.modal.auction { width: min(440px, 100%); }
++.modal.over { width: min(480px, 100%); text-align: center; }
+ 
+-.manage-list { display: flex; flex-direction: column; gap: 6px; }
+-.manage-row { display: flex; align-items: center; gap: 10px; background: var(--panel-2); border-radius: 8px; padding: 8px 10px; }
+-.manage-band { width: 5px; align-self: stretch; border-radius: 3px; }
++.manage-list { display: flex; flex-direction: column; gap: 8px; }
++.manage-row {
++  display: flex; align-items: center; gap: 12px;
++  background: var(--panel-2); border: 2px solid var(--line); border-radius: 12px; padding: 10px 12px;
++}
++.manage-band { width: 8px; align-self: stretch; border-radius: 4px; }
+ .manage-info { flex: 1; display: flex; flex-direction: column; }
+-.manage-actions { display: flex; gap: 6px; flex-wrap: wrap; }
++.manage-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+ 
+-.trade-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 12px; }
+-.trade-tiles { display: flex; flex-direction: column; gap: 4px; max-height: 240px; overflow-y: auto; }
++.trade-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 14px; }
++.trade-tiles { display: flex; flex-direction: column; gap: 6px; max-height: 250px; overflow-y: auto; }
+ .trade-tile {
+-  display: flex; align-items: center; gap: 7px; background: var(--panel-2);
+-  border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px;
+-  color: var(--text); font: inherit; font-size: 12px; cursor: pointer; text-align: left;
++  display: flex; align-items: center; gap: 9px; background: #fff;
++  border: 2px solid var(--line); border-radius: 9px; padding: 8px 10px;
++  color: var(--text); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; text-align: left;
+ }
+-.trade-tile.picked { border-color: var(--accent); background: #17301f; }
+-.trade-tile:disabled { opacity: 0.4; cursor: not-allowed; }
+-.trade-tile .dot { width: 9px; height: 9px; border-radius: 3px; flex: none; }
++.trade-tile.picked { border-color: var(--accent); background: var(--accent-soft); }
++.trade-tile:disabled { opacity: 0.42; cursor: not-allowed; }
++.trade-tile .dot { width: 13px; height: 13px; border-radius: 4px; flex: none; }
+ 
+ .auction-tile {
+-  border: 2px solid var(--line); border-radius: 8px; padding: 12px;
+-  display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; text-align: center;
++  border: 3px solid var(--line); border-radius: 12px; padding: 16px;
++  display: flex; flex-direction: column; gap: 5px; margin-bottom: 14px; text-align: center;
++  font-size: 18px; font-weight: 800;
+ }
+-.auction-state { font-size: 15px; }
+-.auction-controls { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+-
+-.standings { list-style: none; margin: 16px 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+-.standings li { display: flex; align-items: center; gap: 10px; background: var(--panel-2); border-radius: 8px; padding: 8px 10px; }
+-.rank { width: 20px; color: var(--muted); }
+-.standing-name { flex: 1; text-align: left; font-weight: 600; }
+-.standing-net { font-variant-numeric: tabular-nums; }
+-.win-note { color: var(--accent); font-weight: 600; }
++.auction-tile span { font-size: 14px; font-weight: 600; color: var(--muted); }
++.auction-state { font-size: 17px; font-weight: 700; }
++.auction-controls { margin-top: 14px; display: flex; flex-direction: column; gap: 10px; }
+ 
+-/* ------------------------------------------------------------ responsive */
+-@media (max-width: 1180px) {
+-  .game-main { grid-template-columns: 240px minmax(0, 1fr) 280px; }
++.standings { list-style: none; margin: 18px 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
++.standings li {
++  display: flex; align-items: center; gap: 12px;
++  background: var(--panel-2); border: 2px solid var(--line); border-radius: 12px; padding: 10px 12px;
++}
++.rank { width: 24px; color: var(--muted); font-weight: 800; }
++.standing-name { flex: 1; text-align: left; font-weight: 750; }
++.standing-net { font-variant-numeric: tabular-nums; font-weight: 700; }
++.win-note { color: var(--accent); font-weight: 800; font-size: 17px; }
++
++/* ============================================================ responsive */
++@media (max-width: 1240px) {
++  .game-main { grid-template-columns: 218px minmax(0, 1fr) 258px; }
+ }
+-@media (max-width: 980px) {
++@media (max-width: 1000px) {
+   .home-grid, .lobby-grid, .trade-grid, .trade-offer-body { grid-template-columns: 1fr; }
+   .game { height: auto; }
+   .game-main { grid-template-columns: 1fr; }
+   .col { overflow: visible; }
+-  .board { --size: min(94vw, 640px); }
++  .board { width: min(96vw, 660px); }
+ }
+diff --git a/packages/server/src/index.ts b/packages/server/src/index.ts
+index 144d86b..4b3a375 100644
+--- a/packages/server/src/index.ts
++++ b/packages/server/src/index.ts
+@@ -102,6 +102,12 @@ io.on('connection', (socket) => {
+         ack({ ok: false, error: result.error });
+         return;
+       }
++      if (result.displacedSocketId) {
++        const stale = io.sockets.sockets.get(result.displacedSocketId);
++        seats.delete(result.displacedSocketId);
++        stale?.emit('room:left', { reason: 'You opened this table in another tab.' });
++        stale?.leave(result.room.id);
++      }
+       seatSocket(socket, result.room, result.playerId, result.token);
+       ack({ ok: true });
+     } catch (err) {
+diff --git a/packages/server/src/rooms.ts b/packages/server/src/rooms.ts
+index 0ae3cc8..c823aad 100644
+--- a/packages/server/src/rooms.ts
++++ b/packages/server/src/rooms.ts
+@@ -128,7 +128,9 @@ export class RoomManager {
+     playerName: string,
+     token: string | undefined,
+     socketId: string,
+-  ): { ok: true; room: Room; playerId: string; token: string } | { ok: false; error: string } {
++  ):
++    | { ok: true; room: Room; playerId: string; token: string; displacedSocketId?: string }
++    | { ok: false; error: string } {
+     const room = this.rooms.get(roomId.toUpperCase());
+     if (!room) return { ok: false, error: 'That room does not exist.' };
+ 
+@@ -141,9 +143,14 @@ export class RoomManager {
+           clearTimeout(timer);
+           room.dropTimers.delete(playerId);
+         }
++        // If another socket still holds this seat, it is a stale tab: hand the
++        // seat to the new socket and tell the old one it has been replaced.
++        const previous = room.sockets.get(playerId);
+         room.sockets.set(playerId, socketId);
+         this.dispatchInternal(room, playerId, { type: 'set_connected', playerId, connected: true });
+-        return { ok: true, room, playerId, token };
++        return previous && previous !== socketId
++          ? { ok: true, room, playerId, token, displacedSocketId: previous }
++          : { ok: true, room, playerId, token };
+       }
+     }
+ 
+diff --git a/packages/shared/src/data/board.ts b/packages/shared/src/data/board.ts
+index 7cd7bcb..ad85d45 100644
+--- a/packages/shared/src/data/board.ts
++++ b/packages/shared/src/data/board.ts
+@@ -8,11 +8,12 @@ import type { ColorGroup, RentLadder, Tile } from '../types.js';
+ const street = (
+   id: number,
+   name: string,
++  short: string,
+   group: ColorGroup,
+   price: number,
+   rent: RentLadder,
+   buildCost: number,
+-): Tile => ({ id, name, kind: 'street', group, price, rent, buildCost });
++): Tile => ({ id, name, short, kind: 'street', group, price, rent, buildCost });
+ 
+ const depot = (id: number, name: string): Tile => ({
+   id,
+@@ -22,9 +23,10 @@ const depot = (id: number, name: string): Tile => ({
+   price: 200,
+ });
+ 
+-const works = (id: number, name: string): Tile => ({
++const works = (id: number, name: string, short: string): Tile => ({
+   id,
+   name,
++  short,
+   kind: 'works',
+   group: 'works',
+   price: 150,
+@@ -32,45 +34,45 @@ const works = (id: number, name: string): Tile => ({
+ 
+ export const BOARD: readonly Tile[] = Object.freeze([
+   { id: 0, name: 'Start', kind: 'start' },
+-  street(1, 'Alder Lane', 'clay', 60, [2, 10, 30, 90, 160, 250], 50),
++  street(1, 'Alder Lane', 'Alder Ln', 'clay', 60, [2, 10, 30, 90, 160, 250], 50),
+   { id: 2, name: 'Ledger', kind: 'ledger' },
+-  street(3, 'Birch Row', 'clay', 60, [4, 20, 60, 180, 320, 450], 50),
+-  { id: 4, name: 'Income Levy', kind: 'tax', amount: 200 },
++  street(3, 'Birch Row', 'Birch Row', 'clay', 60, [4, 20, 60, 180, 320, 450], 50),
++  { id: 4, name: 'Income Levy', short: 'Income', kind: 'tax', amount: 200 },
+   depot(5, 'North Depot'),
+-  street(6, 'Cedar Street', 'sky', 100, [6, 30, 90, 270, 400, 550], 50),
++  street(6, 'Cedar Street', 'Cedar St', 'sky', 100, [6, 30, 90, 270, 400, 550], 50),
+   { id: 7, name: 'Fortune', kind: 'fortune' },
+-  street(8, 'Dogwood Drive', 'sky', 100, [6, 30, 90, 270, 400, 550], 50),
+-  street(9, 'Elmcroft Court', 'sky', 120, [8, 40, 100, 300, 450, 600], 50),
++  street(8, 'Dogwood Drive', 'Dogwood', 'sky', 100, [6, 30, 90, 270, 400, 550], 50),
++  street(9, 'Elmcroft Court', 'Elmcroft', 'sky', 120, [8, 40, 100, 300, 450, 600], 50),
+   { id: 10, name: 'Holding Yard', kind: 'holding' },
+-  street(11, 'Foxglove Way', 'rose', 140, [10, 50, 150, 450, 625, 750], 100),
+-  works(12, 'Power Grid'),
+-  street(13, 'Garnet Grove', 'rose', 140, [10, 50, 150, 450, 625, 750], 100),
+-  street(14, 'Hawthorn Hill', 'rose', 160, [12, 60, 180, 500, 700, 900], 100),
++  street(11, 'Foxglove Way', 'Foxglove', 'rose', 140, [10, 50, 150, 450, 625, 750], 100),
++  works(12, 'Power Grid', 'Power'),
++  street(13, 'Garnet Grove', 'Garnet', 'rose', 140, [10, 50, 150, 450, 625, 750], 100),
++  street(14, 'Hawthorn Hill', 'Hawthorn', 'rose', 160, [12, 60, 180, 500, 700, 900], 100),
+   depot(15, 'East Depot'),
+-  street(16, 'Ivywood Road', 'amber', 180, [14, 70, 200, 550, 750, 950], 100),
++  street(16, 'Ivywood Road', 'Ivywood', 'amber', 180, [14, 70, 200, 550, 750, 950], 100),
+   { id: 17, name: 'Ledger', kind: 'ledger' },
+-  street(18, 'Juniper Junction', 'amber', 180, [14, 70, 200, 550, 750, 950], 100),
+-  street(19, 'Kingfisher Close', 'amber', 200, [16, 80, 220, 600, 800, 1000], 100),
++  street(18, 'Juniper Junction', 'Juniper', 'amber', 180, [14, 70, 200, 550, 750, 950], 100),
++  street(19, 'Kingfisher Close', 'Kingfisher', 'amber', 200, [16, 80, 220, 600, 800, 1000], 100),
+   { id: 20, name: 'Plaza', kind: 'plaza' },
+-  street(21, 'Larkspur Lane', 'crimson', 220, [18, 90, 250, 700, 875, 1050], 150),
++  street(21, 'Larkspur Lane', 'Larkspur', 'crimson', 220, [18, 90, 250, 700, 875, 1050], 150),
+   { id: 22, name: 'Fortune', kind: 'fortune' },
+-  street(23, 'Maple Mews', 'crimson', 220, [18, 90, 250, 700, 875, 1050], 150),
+-  street(24, 'Nightingale Nook', 'crimson', 240, [20, 100, 300, 750, 925, 1100], 150),
++  street(23, 'Maple Mews', 'Maple Mews', 'crimson', 220, [18, 90, 250, 700, 875, 1050], 150),
++  street(24, 'Nightingale Nook', 'Nightingale', 'crimson', 240, [20, 100, 300, 750, 925, 1100], 150),
+   depot(25, 'South Depot'),
+-  street(26, 'Orchard Parade', 'gold', 260, [22, 110, 330, 800, 975, 1150], 150),
+-  street(27, 'Poplar Place', 'gold', 260, [22, 110, 330, 800, 975, 1150], 150),
+-  works(28, 'Water Supply'),
+-  street(29, 'Quarry Quay', 'gold', 280, [24, 120, 360, 850, 1025, 1200], 150),
++  street(26, 'Orchard Parade', 'Orchard', 'gold', 260, [22, 110, 330, 800, 975, 1150], 150),
++  street(27, 'Poplar Place', 'Poplar', 'gold', 260, [22, 110, 330, 800, 975, 1150], 150),
++  works(28, 'Water Supply', 'Water'),
++  street(29, 'Quarry Quay', 'Quarry', 'gold', 280, [24, 120, 360, 850, 1025, 1200], 150),
+   { id: 30, name: 'Dispatch', kind: 'dispatch' },
+-  street(31, 'Rosewood Rise', 'forest', 300, [26, 130, 390, 900, 1100, 1275], 200),
+-  street(32, 'Sycamore Square', 'forest', 300, [26, 130, 390, 900, 1100, 1275], 200),
++  street(31, 'Rosewood Rise', 'Rosewood', 'forest', 300, [26, 130, 390, 900, 1100, 1275], 200),
++  street(32, 'Sycamore Square', 'Sycamore', 'forest', 300, [26, 130, 390, 900, 1100, 1275], 200),
+   { id: 33, name: 'Ledger', kind: 'ledger' },
+-  street(34, 'Thistle Terrace', 'forest', 320, [28, 150, 450, 1000, 1200, 1400], 200),
++  street(34, 'Thistle Terrace', 'Thistle', 'forest', 320, [28, 150, 450, 1000, 1200, 1400], 200),
+   depot(35, 'West Depot'),
+   { id: 36, name: 'Fortune', kind: 'fortune' },
+-  street(37, 'Umberland Avenue', 'navy', 350, [35, 175, 500, 1100, 1300, 1500], 200),
+-  { id: 38, name: 'Luxury Duty', kind: 'tax', amount: 100 },
+-  street(39, 'Vanguard Boulevard', 'navy', 400, [50, 200, 600, 1400, 1700, 2000], 200),
++  street(37, 'Umberland Avenue', 'Umberland', 'navy', 350, [35, 175, 500, 1100, 1300, 1500], 200),
++  { id: 38, name: 'Luxury Duty', short: 'Luxury', kind: 'tax', amount: 100 },
++  street(39, 'Vanguard Boulevard', 'Vanguard', 'navy', 400, [50, 200, 600, 1400, 1700, 2000], 200),
+ ] as const satisfies readonly Tile[]);
+ 
+ export const BOARD_SIZE = BOARD.length;
+@@ -89,16 +91,16 @@ export const GROUP_ORDER: readonly ColorGroup[] = [
+ ];
+ 
+ export const GROUP_COLORS: Record<ColorGroup | 'depot' | 'works', string> = {
+-  clay: '#8d5b3f',
+-  sky: '#7fc7e8',
+-  rose: '#d8639b',
+-  amber: '#e8912d',
+-  crimson: '#d0342c',
+-  gold: '#f2c53d',
+-  forest: '#3f9b52',
+-  navy: '#2f5fb5',
+-  depot: '#3b4252',
+-  works: '#6b7b8c',
++  clay: '#a0522d',
++  sky: '#38bdf8',
++  rose: '#ec4899',
++  amber: '#fb923c',
++  crimson: '#ef4444',
++  gold: '#facc15',
++  forest: '#22c55e',
++  navy: '#4f46e5',
++  depot: '#334155',
++  works: '#14b8a6',
+ };
+ 
+ export const GROUP_LABELS: Record<ColorGroup | 'depot' | 'works', string> = {
+diff --git a/packages/shared/src/engine/state.ts b/packages/shared/src/engine/state.ts
+index 588e0e4..18f5ff4 100644
+--- a/packages/shared/src/engine/state.ts
++++ b/packages/shared/src/engine/state.ts
+@@ -4,14 +4,14 @@ import { randomSeed, shuffle } from '../rng.js';
+ import type { Deed, GameSettings, GameState, Player } from '../types.js';
+ 
+ export const PLAYER_COLORS = [
+-  '#e5484d',
+-  '#3b82f6',
+-  '#22c55e',
++  '#e11d48',
++  '#2563eb',
++  '#16a34a',
+   '#f59e0b',
+-  '#a855f7',
+-  '#06b6d4',
+-  '#ec4899',
+-  '#84cc16',
++  '#9333ea',
++  '#0891b2',
++  '#db2777',
++  '#65a30d',
+ ] as const;
+ 
+ export const TOKENS = [
+diff --git a/packages/shared/src/types.ts b/packages/shared/src/types.ts
+index 2010cef..98d5d95 100644
+--- a/packages/shared/src/types.ts
++++ b/packages/shared/src/types.ts
+@@ -38,6 +38,8 @@ export interface TileBase {
+   /** Board index, 0..39, running clockwise from Start. */
+   id: number;
+   name: string;
++  /** Compact label for the board square; the full `name` is used everywhere else. */
++  short?: string;
+   kind: TileKind;
+ }
+ 
+-- 
+2.43.0
+

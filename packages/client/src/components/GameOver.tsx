@@ -1,6 +1,6 @@
 import { leaveRoom } from '../net.js';
 import { netWorth, type GameState } from '@rentier/shared';
-import { TOKEN_GLYPHS, money } from '../lib.js';
+import { initial, money } from '../lib.js';
 
 interface Props {
   state: GameState;
@@ -25,7 +25,7 @@ export default function GameOver({ state, myId }: Props) {
             <li key={p.id}>
               <span className="rank">{i + 1}</span>
               <span className="chip" style={{ background: p.color }}>
-                {TOKEN_GLYPHS[p.token] ?? '●'}
+                {initial(p.name)}
               </span>
               <span className="standing-name">{p.name}</span>
               <span className="standing-net">{p.bankrupt ? 'bankrupt' : money(netWorth(state, p.id))}</span>

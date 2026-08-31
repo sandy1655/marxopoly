@@ -128,7 +128,9 @@ export class RoomManager {
     playerName: string,
     token: string | undefined,
     socketId: string,
-  ): { ok: true; room: Room; playerId: string; token: string } | { ok: false; error: string } {
+  ):
+    | { ok: true; room: Room; playerId: string; token: string; displacedSocketId?: string }
+    | { ok: false; error: string } {
     const room = this.rooms.get(roomId.toUpperCase());
     if (!room) return { ok: false, error: 'That room does not exist.' };
 
@@ -141,9 +143,14 @@ export class RoomManager {
           clearTimeout(timer);
           room.dropTimers.delete(playerId);
         }
+        // If another socket still holds this seat, it is a stale tab: hand the
+        // seat to the new socket and tell the old one it has been replaced.
+        const previous = room.sockets.get(playerId);
         room.sockets.set(playerId, socketId);
         this.dispatchInternal(room, playerId, { type: 'set_connected', playerId, connected: true });
-        return { ok: true, room, playerId, token };
+        return previous && previous !== socketId
+          ? { ok: true, room, playerId, token, displacedSocketId: previous }
+          : { ok: true, room, playerId, token };
       }
     }
 

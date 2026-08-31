@@ -1,6 +1,6 @@
 import { addBot, kickPlayer, leaveRoom, send, updateSettings, useStore } from '../net.js';
 import type { GameSettings } from '@rentier/shared';
-import { TOKEN_GLYPHS } from '../lib.js';
+import { initial } from '../lib.js';
 
 const TOGGLES: { key: keyof GameSettings; label: string; hint: string }[] = [
   { key: 'auctionsEnabled', label: 'Auctions', hint: 'Declined properties go under the hammer.' },
@@ -48,7 +48,7 @@ export default function Lobby() {
             {game.players.map((p) => (
               <li key={p.id} className="seat">
                 <span className="chip" style={{ background: p.color }}>
-                  {TOKEN_GLYPHS[p.token] ?? '●'}
+                  {initial(p.name)}
                 </span>
                 <span className="seat-name">
                   {p.name}

@@ -4,14 +4,14 @@ import { randomSeed, shuffle } from '../rng.js';
 import type { Deed, GameSettings, GameState, Player } from '../types.js';
 
 export const PLAYER_COLORS = [
-  '#e5484d',
-  '#3b82f6',
-  '#22c55e',
+  '#e11d48',
+  '#2563eb',
+  '#16a34a',
   '#f59e0b',
-  '#a855f7',
-  '#06b6d4',
-  '#ec4899',
-  '#84cc16',
+  '#9333ea',
+  '#0891b2',
+  '#db2777',
+  '#65a30d',
 ] as const;
 
 export const TOKENS = [

@@ -11,7 +11,17 @@ import type {
 } from '@rentier/shared';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL ?? '';
-const STORAGE_KEY = 'rentier.session.v1';
+
+/**
+ * The seat token lives in sessionStorage, NOT localStorage, and this matters:
+ * sessionStorage is per browser tab. Refreshing a tab keeps your seat, but
+ * opening a second tab gives you a clean slate so you can join the same table
+ * as a different player. With localStorage the second tab would silently
+ * reconnect as the first tab's player and knock it offline.
+ */
+const SESSION_KEY = 'rentier.session.v1';
+/** The display name is a convenience, so it is fine to share across tabs. */
+const NAME_KEY = 'rentier.name.v1';
 
 export interface StoredSession {
   roomId: string;
@@ -21,7 +31,7 @@ export interface StoredSession {
 
 function readSession(): StoredSession | null {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = sessionStorage.getItem(SESSION_KEY);
     return raw ? (JSON.parse(raw) as StoredSession) : null;
   } catch {
     return null;
@@ -30,10 +40,26 @@ function readSession(): StoredSession | null {
 
 function writeSession(session: StoredSession | null): void {
   try {
-    if (session) localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
-    else localStorage.removeItem(STORAGE_KEY);
+    if (session) sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
+    else sessionStorage.removeItem(SESSION_KEY);
   } catch {
     /* storage may be unavailable; the app still works, just without reconnect */
+  }
+}
+
+function readName(): string {
+  try {
+    return localStorage.getItem(NAME_KEY) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+function writeName(name: string): void {
+  try {
+    localStorage.setItem(NAME_KEY, name);
+  } catch {
+    /* ignore */
   }
 }
 
@@ -61,7 +87,7 @@ let state: ClientStore = {
   rooms: [],
   chat: [],
   error: null,
-  playerName: readSession()?.playerName ?? '',
+  playerName: readSession()?.playerName ?? readName(),
   joining: false,
 };
 
@@ -110,6 +136,10 @@ socket.on('connect', () => {
 
 socket.on('disconnect', () => set({ connected: false }));
 
+socket.on('connect_error', () => {
+  set({ connected: false, joining: false });
+});
+
 socket.on('room:list', (rooms) => set({ rooms }));
 
 socket.on('room:joined', ({ roomId, playerId, token }) => {
@@ -144,6 +174,7 @@ socket.on('room:left', () => {
 
 export function setPlayerName(name: string): void {
   set({ playerName: name });
+  writeName(name);
   const session = readSession();
   if (session) writeSession({ ...session, playerName: name });
 }

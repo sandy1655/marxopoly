@@ -38,6 +38,8 @@ export interface TileBase {
   /** Board index, 0..39, running clockwise from Start. */
   id: number;
   name: string;
+  /** Compact label for the board square; the full `name` is used everywhere else. */
+  short?: string;
   kind: TileKind;
 }
 

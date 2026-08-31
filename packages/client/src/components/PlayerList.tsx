@@ -1,5 +1,5 @@
 import { netWorth, ownedTileIds, tileAt, type GameState } from '@rentier/shared';
-import { TOKEN_GLYPHS, money, tileColor } from '../lib.js';
+import { initial, money, tileColor } from '../lib.js';
 
 interface Props {
   state: GameState;
@@ -18,10 +18,11 @@ export default function PlayerList({ state, myId, onTrade }: Props) {
           <div
             key={p.id}
             className={`player-card${p.id === current?.id ? ' active' : ''}${p.bankrupt ? ' out' : ''}`}
+            style={{ '--pc': p.color } as React.CSSProperties}
           >
             <div className="player-top">
               <span className="chip" style={{ background: p.color }}>
-                {TOKEN_GLYPHS[p.token] ?? '●'}
+                {initial(p.name)}
               </span>
               <span className="player-name">
                 {p.name}
@@ -32,7 +33,7 @@ export default function PlayerList({ state, myId, onTrade }: Props) {
               <span className="player-cash">{p.bankrupt ? 'out' : money(p.cash)}</span>
             </div>
             <div className="player-meta">
-              <span>{tiles.length} deeds</span>
+              <span>{tiles.length} {tiles.length === 1 ? 'deed' : 'deeds'}</span>
               <span>net {money(netWorth(state, p.id))}</span>
               {p.inHolding && <span className="warn">in holding</span>}
               {p.reprieveCards > 0 && <span>{p.reprieveCards} reprieve</span>}

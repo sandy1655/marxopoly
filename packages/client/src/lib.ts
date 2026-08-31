@@ -67,6 +67,11 @@ export function secondsLeft(deadline: number | null): number | null {
   return Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
 }
 
+/** Board tokens show the player's initial — the clearest marker at small sizes. */
+export function initial(name: string): string {
+  return (name.trim()[0] ?? '?').toUpperCase();
+}
+
 export const TOKEN_GLYPHS: Record<string, string> = {
   rocket: '▲',
   anchor: '⚓',

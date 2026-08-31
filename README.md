@@ -30,7 +30,10 @@ whatever state the server broadcasts. Every rule lives in one place.
   moment of acceptance so a stale offer can never execute.
 - **Debt instead of instant death** — falling short opens a debt you must settle by selling
   buildings, mortgaging or trading. Bankruptcy is only allowed when you genuinely cannot pay.
-- **Reconnect** — your seat is held for two minutes; refreshing the tab drops you straight back in.
+- **Reconnect** — your seat is held for two minutes; refreshing the tab drops you straight back in,
+  and a second tab joins as a separate player instead of stealing your seat.
+- **Bright, readable board** — full-colour property headers, short board labels, large tokens with
+  player initials, and an owner bar on each tile's outer edge.
 - **Turn timers** — configurable, with sensible auto-resolution when they expire.
 - **Bots** — heuristic opponents that buy, build, bid and answer trades.
 - **Deterministic** — the whole game runs off one seed, so a game replays identically.
@@ -43,8 +46,13 @@ pnpm --filter @rentier/shared build   # the client and server consume its dist o
 pnpm dev                              # server on :3001, client on :5173
 ```
 
-Open http://localhost:5173, create a table, and open the same URL in a second tab (or send the code
-to a friend) to join.
+Open http://localhost:5173, create a table, and open the same URL in a **second browser tab** (or
+send the five-character code to a friend) to join.
+
+Each tab is its own player. The seat token is kept in `sessionStorage`, which is per-tab, so
+refreshing a tab keeps your seat while a new tab starts fresh and can join as somebody else. If a
+second tab ever reclaims a seat, the older tab is told it was replaced rather than silently going
+dead.
 
 ### Production
 

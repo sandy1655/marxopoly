@@ -36,7 +36,7 @@ export default function Board({ state, selected, onSelect }: Props) {
           {current && (
             <div className="centre-turn">
               <span className="chip sm" style={{ background: current.color }} />
-              {current.name}
+              {current.name}'s turn
             </div>
           )}
           {state.settings.plazaPot && state.plazaPot > 0 && (

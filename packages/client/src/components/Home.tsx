@@ -73,6 +73,11 @@ export default function Home() {
               Refresh
             </button>
           </div>
+          <div className="hint">
+            Testing on your own? Open a <strong>second browser tab</strong> and join with the code —
+            each tab is its own player. Refreshing a tab keeps your seat.
+          </div>
+
           <div className="room-list">
             {rooms.length === 0 && <p className="muted">No public tables right now — start one.</p>}
             {rooms.map((room) => (
