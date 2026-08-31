@@ -1,0 +1,20 @@
+{
+  "name": "rentier",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Rentier — a real-time multiplayer property trading board game for the browser.",
+  "license": "MIT",
+  "packageManager": "pnpm@10.28.0",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "dev": "pnpm --parallel --filter \"./packages/*\" dev",
+    "build": "pnpm --filter @rentier/shared build && pnpm --filter @rentier/server build && pnpm --filter @rentier/client build",
+    "start": "pnpm --filter @rentier/server start",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm --filter @rentier/shared test",
+    "clean": "rm -rf packages/*/dist packages/*/tsconfig.tsbuildinfo node_modules packages/*/node_modules"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}

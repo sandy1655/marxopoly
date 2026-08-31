@@ -1,0 +1,11 @@
+services:
+  rentier:
+    build: .
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: production
+      PORT: "3001"
+      CLIENT_ORIGIN: "*"
+      TURN_TIMEOUT_SECONDS: "90"
+    restart: unless-stopped
