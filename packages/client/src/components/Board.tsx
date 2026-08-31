@@ -1,5 +1,6 @@
 import { ALL_CARDS, BOARD, type GameState } from '@rentier/shared';
 import BoardTile from './BoardTile.js';
+import TokenLayer from './TokenLayer.js';
 import { money } from '../lib.js';
 import Dice from './Dice.js';
 
@@ -27,6 +28,8 @@ export default function Board({ state, selected, onSelect }: Props) {
             onSelect={onSelect}
           />
         ))}
+
+        <TokenLayer state={state} />
 
         <div className="board-centre">
           <div className="brand">

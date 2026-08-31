@@ -20,45 +20,45 @@ const works = (id, name, short) => ({
 });
 export const BOARD = Object.freeze([
     { id: 0, name: 'Start', kind: 'start' },
-    street(1, 'Alder Lane', 'Alder Ln', 'clay', 60, [2, 10, 30, 90, 160, 250], 50),
+    street(1, 'Stalingrad', 'Stalingrad', 'clay', 60, [2, 10, 30, 90, 160, 250], 50),
     { id: 2, name: 'Ledger', kind: 'ledger' },
-    street(3, 'Birch Row', 'Birch Row', 'clay', 60, [4, 20, 60, 180, 320, 450], 50),
+    street(3, 'Leningrad', 'Leningrad', 'clay', 60, [4, 20, 60, 180, 320, 450], 50),
     { id: 4, name: 'Income Levy', short: 'Income', kind: 'tax', amount: 200 },
-    depot(5, 'North Depot'),
-    street(6, 'Cedar Street', 'Cedar St', 'sky', 100, [6, 30, 90, 270, 400, 550], 50),
+    depot(5, 'Stuttgart 21'),
+    street(6, 'Tel Aviv', 'Tel Aviv', 'sky', 100, [6, 30, 90, 270, 400, 550], 50),
     { id: 7, name: 'Fortune', kind: 'fortune' },
-    street(8, 'Dogwood Drive', 'Dogwood', 'sky', 100, [6, 30, 90, 270, 400, 550], 50),
-    street(9, 'Elmcroft Court', 'Elmcroft', 'sky', 120, [8, 40, 100, 300, 450, 600], 50),
+    street(8, 'Jerusalem', 'Jerusalem', 'sky', 100, [6, 30, 90, 270, 400, 550], 50),
+    street(9, 'Gaza Strip', 'Gaza Strip', 'sky', 120, [8, 40, 100, 300, 450, 600], 50),
     { id: 10, name: 'Holding Yard', kind: 'holding' },
-    street(11, 'Foxglove Way', 'Foxglove', 'rose', 140, [10, 50, 150, 450, 625, 750], 100),
-    works(12, 'Power Grid', 'Power'),
-    street(13, 'Garnet Grove', 'Garnet', 'rose', 140, [10, 50, 150, 450, 625, 750], 100),
-    street(14, 'Hawthorn Hill', 'Hawthorn', 'rose', 160, [12, 60, 180, 500, 700, 900], 100),
-    depot(15, 'East Depot'),
-    street(16, 'Ivywood Road', 'Ivywood', 'amber', 180, [14, 70, 200, 550, 750, 950], 100),
+    street(11, 'Bangkok', 'Bangkok', 'rose', 140, [10, 50, 150, 450, 625, 750], 100),
+    works(12, 'AI Datacenter', 'Datacenter'),
+    street(13, 'Phuket', 'Phuket', 'rose', 140, [10, 50, 150, 450, 625, 750], 100),
+    street(14, 'Ladyboy Street', 'Ladyboy Street', 'rose', 160, [12, 60, 180, 500, 700, 900], 100),
+    depot(15, 'Berlin Flughafen'),
+    street(16, 'Folk Valley', 'Folk Valley', 'amber', 180, [14, 70, 200, 550, 750, 950], 100),
     { id: 17, name: 'Ledger', kind: 'ledger' },
-    street(18, 'Juniper Junction', 'Juniper', 'amber', 180, [14, 70, 200, 550, 750, 950], 100),
-    street(19, 'Kingfisher Close', 'Kingfisher', 'amber', 200, [16, 80, 220, 600, 800, 1000], 100),
+    street(18, 'Epstein Island', 'Epstein Island', 'amber', 180, [14, 70, 200, 550, 750, 950], 100),
+    street(19, 'Dagestan', 'Dagestan', 'amber', 200, [16, 80, 220, 600, 800, 1000], 100),
     { id: 20, name: 'Plaza', kind: 'plaza' },
-    street(21, 'Larkspur Lane', 'Larkspur', 'crimson', 220, [18, 90, 250, 700, 875, 1050], 150),
+    street(21, 'Mumbai', 'Mumbai', 'crimson', 220, [18, 90, 250, 700, 875, 1050], 150),
     { id: 22, name: 'Fortune', kind: 'fortune' },
-    street(23, 'Maple Mews', 'Maple Mews', 'crimson', 220, [18, 90, 250, 700, 875, 1050], 150),
-    street(24, 'Nightingale Nook', 'Nightingale', 'crimson', 240, [20, 100, 300, 750, 925, 1100], 150),
-    depot(25, 'South Depot'),
-    street(26, 'Orchard Parade', 'Orchard', 'gold', 260, [22, 110, 330, 800, 975, 1150], 150),
-    street(27, 'Poplar Place', 'Poplar', 'gold', 260, [22, 110, 330, 800, 975, 1150], 150),
-    works(28, 'Water Supply', 'Water'),
-    street(29, 'Quarry Quay', 'Quarry', 'gold', 280, [24, 120, 360, 850, 1025, 1200], 150),
+    street(23, 'Bangalore', 'Bangalore', 'crimson', 220, [18, 90, 250, 700, 875, 1050], 150),
+    street(24, 'Curry-City', 'Curry-City', 'crimson', 240, [20, 100, 300, 750, 925, 1100], 150),
+    depot(25, 'Hamburger Hafen'),
+    street(26, 'Feuerbach', 'Feuerbach', 'gold', 260, [22, 110, 330, 800, 975, 1150], 150),
+    street(27, 'Cannstatt', 'Cannstatt', 'gold', 260, [22, 110, 330, 800, 975, 1150], 150),
+    works(28, 'Plantation', 'Plantation'),
+    street(29, 'Bosch-Areal', 'Bosch-Areal', 'gold', 280, [24, 120, 360, 850, 1025, 1200], 150),
     { id: 30, name: 'Dispatch', kind: 'dispatch' },
-    street(31, 'Rosewood Rise', 'Rosewood', 'forest', 300, [26, 130, 390, 900, 1100, 1275], 200),
-    street(32, 'Sycamore Square', 'Sycamore', 'forest', 300, [26, 130, 390, 900, 1100, 1275], 200),
+    street(31, 'Hellmich-Street', 'Hellmich-Street', 'forest', 300, [26, 130, 390, 900, 1100, 1275], 200),
+    street(32, 'Babylon-Tower', 'Babylon-Tower', 'forest', 300, [26, 130, 390, 900, 1100, 1275], 200),
     { id: 33, name: 'Ledger', kind: 'ledger' },
-    street(34, 'Thistle Terrace', 'Thistle', 'forest', 320, [28, 150, 450, 1000, 1200, 1400], 200),
+    street(34, 'Schuerstedt-Datacenter', 'Schuerstedt-Datacenter', 'forest', 320, [28, 150, 450, 1000, 1200, 1400], 200),
     depot(35, 'West Depot'),
     { id: 36, name: 'Fortune', kind: 'fortune' },
-    street(37, 'Umberland Avenue', 'Umberland', 'navy', 350, [35, 175, 500, 1100, 1300, 1500], 200),
+    street(37, 'Zuerich', 'Zuerich', 'navy', 350, [35, 175, 500, 1100, 1300, 1500], 200),
     { id: 38, name: 'Luxury Duty', short: 'Luxury', kind: 'tax', amount: 100 },
-    street(39, 'Vanguard Boulevard', 'Vanguard', 'navy', 400, [50, 200, 600, 1400, 1700, 2000], 200),
+    street(39, 'Bern', 'Bern', 'navy', 400, [50, 200, 600, 1400, 1700, 2000], 200),
 ]);
 export const BOARD_SIZE = BOARD.length;
 export const HOLDING_TILE = 10;
@@ -120,5 +120,19 @@ export function tileAt(id) {
     if (!tile)
         throw new Error(`No tile at index ${id}`);
     return tile;
+}
+/**
+ * Board index of the tile with this `name` (case-insensitive), so other data —
+ * the action cards especially — can point at a street by the exact name shown
+ * on the board and stay in sync when it is renamed. Throws with the list of
+ * valid names when nothing matches.
+ */
+export function tileIdByName(name) {
+    const wanted = name.trim().toLowerCase();
+    const tile = BOARD.find((t) => t.name.toLowerCase() === wanted);
+    if (!tile) {
+        throw new Error(`No board tile named "${name}". Valid names: ${BOARD.map((t) => t.name).join(', ')}`);
+    }
+    return tile.id;
 }
 //# sourceMappingURL=board.js.map

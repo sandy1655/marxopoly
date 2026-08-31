@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import { addBot, kickPlayer, leaveRoom, send, updateSettings, useStore } from '../net.js';
 import type { GameSettings } from '@rentier/shared';
-import { initial } from '../lib.js';
+import { playerIcon } from '../lib.js';
+import CardsPanel from './CardsPanel.js';
 
 const TOGGLES: { key: keyof GameSettings; label: string; hint: string }[] = [
   { key: 'auctionsEnabled', label: 'Auctions', hint: 'Declined properties go under the hammer.' },
@@ -26,6 +28,7 @@ export default function Lobby() {
   const roomName = useStore((s) => s.roomName);
   const roomId = useStore((s) => s.roomId);
   const isHost = hostId === playerId;
+  const [showCards, setShowCards] = useState(false);
 
   return (
     <div className="lobby">
@@ -36,10 +39,17 @@ export default function Lobby() {
             Share this code to invite people: <strong className="code-chip">{roomId}</strong>
           </p>
         </div>
-        <button className="btn ghost" onClick={leaveRoom}>
-          Leave
-        </button>
+        <div className="row">
+          <button className="btn ghost" onClick={() => setShowCards(true)}>
+            View cards
+          </button>
+          <button className="btn ghost" onClick={leaveRoom}>
+            Leave
+          </button>
+        </div>
       </header>
+
+      {showCards && <CardsPanel onClose={() => setShowCards(false)} />}
 
       <div className="lobby-grid">
         <section className="card">
@@ -48,7 +58,7 @@ export default function Lobby() {
             {game.players.map((p) => (
               <li key={p.id} className="seat">
                 <span className="chip" style={{ background: p.color }}>
-                  {initial(p.name)}
+                  {playerIcon(p)}
                 </span>
                 <span className="seat-name">
                   {p.name}

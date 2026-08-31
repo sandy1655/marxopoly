@@ -1,5 +1,5 @@
 import { type Deed, type GameState, type Tile } from '@rentier/shared';
-import { gridPosition, initial, money, playersOn, tileColor, tileEdge } from '../lib.js';
+import { gridPosition, money, tileColor, tileEdge } from '../lib.js';
 
 interface Props {
   tile: Tile;
@@ -23,11 +23,9 @@ export default function BoardTile({ tile, state, onSelect, selected }: Props) {
   const deed: Deed | undefined = state.deeds[tile.id];
   const owner = deed?.ownerId ? state.players.find((p) => p.id === deed.ownerId) : null;
   const edge = tileEdge(tile.id);
-  const here = playersOn(state, tile.id);
   const ownable = tile.kind === 'street' || tile.kind === 'depot' || tile.kind === 'works';
   const special = SPECIAL[tile.kind];
   const isCorner = edge === 'corner';
-  const turnPlayerId = state.players.find((p) => p.seat === state.turnSeat)?.id;
 
   const classes = [
     'tile',
@@ -73,21 +71,6 @@ export default function BoardTile({ tile, state, onSelect, selected }: Props) {
         {tile.kind === 'tax' && <span className="tile-price">Pay {money(tile.amount)}</span>}
         {deed?.mortgaged && <span className="tile-mortgage">MORTGAGED</span>}
       </span>
-
-      {here.length > 0 && (
-        <span className="tile-tokens">
-          {here.map((p) => (
-            <span
-              key={p.id}
-              className={`token${turnPlayerId === p.id ? ' active' : ''}`}
-              style={{ background: p.color }}
-              title={p.name}
-            >
-              {initial(p.name)}
-            </span>
-          ))}
-        </span>
-      )}
     </button>
   );
 }

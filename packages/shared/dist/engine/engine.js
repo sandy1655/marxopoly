@@ -1,5 +1,5 @@
 import { BOARD_SIZE, GROUP_TILES, HOLDING_TILE, tileAt, } from '../data/board.js';
-import { cardById } from '../data/cards.js';
+import { FORTUNE_CARDS, LEDGER_CARDS, cardById } from '../data/cards.js';
 import { rollDice, shuffle } from '../rng.js';
 import { isOwnable } from '../types.js';
 import { activePlayers, canBuild, canMortgage, canSellBuilding, currentPlayer, getPlayer, groupOf, liquidValue, netWorth, nextTileOfKind, ownableTile, ownedTileIds, rentFor, unmortgageCost, } from './selectors.js';
@@ -312,9 +312,8 @@ function resolveLanding(g, player, total, now, rentMultiplier) {
 function drawCard(g, player, deck, now) {
     const pile = deck === 'fortune' ? g.fortuneDeck : g.ledgerDeck;
     if (pile.length === 0) {
-        const reshuffled = shuffle(deck === 'fortune'
-            ? ['f01', 'f02', 'f03', 'f04', 'f05', 'f06', 'f07', 'f08', 'f09', 'f10', 'f11', 'f12', 'f13', 'f14', 'f15', 'f16']
-            : ['l01', 'l02', 'l03', 'l04', 'l05', 'l06', 'l07', 'l08', 'l09', 'l10', 'l11', 'l12', 'l13', 'l14', 'l15', 'l16'], g.rngState);
+        const source = deck === 'fortune' ? FORTUNE_CARDS : LEDGER_CARDS;
+        const reshuffled = shuffle(source.map((c) => c.id), g.rngState);
         g.rngState = reshuffled.state;
         pile.push(...reshuffled.value);
     }

@@ -1,5 +1,5 @@
 import { netWorth, ownedTileIds, tileAt, type GameState } from '@rentier/shared';
-import { initial, money, tileColor } from '../lib.js';
+import { money, playerIcon, tileColor } from '../lib.js';
 
 interface Props {
   state: GameState;
@@ -22,7 +22,7 @@ export default function PlayerList({ state, myId, onTrade }: Props) {
           >
             <div className="player-top">
               <span className="chip" style={{ background: p.color }}>
-                {initial(p.name)}
+                {playerIcon(p)}
               </span>
               <span className="player-name">
                 {p.name}

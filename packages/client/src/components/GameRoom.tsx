@@ -11,6 +11,7 @@ import TradeInbox from './TradeInbox.js';
 import AuctionPanel from './AuctionPanel.js';
 import TileDetail from './TileDetail.js';
 import GameOver from './GameOver.js';
+import CardsPanel from './CardsPanel.js';
 
 export default function GameRoom() {
   const state = useStore((s) => s.game)!;
@@ -19,6 +20,7 @@ export default function GameRoom() {
   const [selected, setSelected] = useState<number | null>(null);
   const [managing, setManaging] = useState(false);
   const [tradeWith, setTradeWith] = useState<string | null>(null);
+  const [showCards, setShowCards] = useState(false);
 
   return (
     <div className="game">
@@ -27,6 +29,9 @@ export default function GameRoom() {
           Rentier<span className="dot" />
         </div>
         <span className="code-chip">{roomId}</span>
+        <button className="btn ghost small" onClick={() => setShowCards(true)}>
+          Cards
+        </button>
         <button className="btn ghost small" onClick={leaveRoom}>
           Leave table
         </button>
@@ -58,6 +63,7 @@ export default function GameRoom() {
       )}
       {state.phase === 'auction' && <AuctionPanel state={state} myId={myId} />}
       {state.phase === 'game_over' && <GameOver state={state} myId={myId} />}
+      {showCards && <CardsPanel onClose={() => setShowCards(false)} />}
     </div>
   );
 }

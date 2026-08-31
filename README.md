@@ -54,6 +54,29 @@ refreshing a tab keeps your seat while a new tab starts fresh and can join as so
 second tab ever reclaims a seat, the older tab is told it was replaced rather than silently going
 dead.
 
+### Play with remote friends (ngrok)
+
+```bash
+pnpm share        # builds the client, starts the server, opens a public ngrok tunnel
+```
+
+On startup the terminal prints a banner with the local, LAN, and public URLs — send the
+`https://…ngrok…` link to your friends and they can join straight from the browser (free ngrok
+shows a one-click "visit site" warning first). Everything (page + WebSocket) goes through that one
+tunnel, so no extra setup on the client.
+
+One-time ngrok setup: create a free account, grab your token from
+<https://dashboard.ngrok.com/get-started/your-authtoken>, and add it to `.env` in the repo root:
+
+```
+NGROK_AUTHTOKEN=<your token>
+```
+
+That env var is the only thing the bundled ngrok SDK reads — `ngrok config add-authtoken`
+(the CLI config file) is **not** used. `.env` (not `.env.example`) is what the server loads.
+
+`--share` / `SHARE=1` also turn the tunnel on for `pnpm dev`-style runs.
+
 ### Production
 
 ```bash
@@ -79,6 +102,9 @@ Copy `.env.example` to `.env` in the repo root (the server reads it at startup).
 | `TURN_TIMEOUT_SECONDS` | `90` | Default turn timer for new rooms (`0` disables). |
 | `EMPTY_ROOM_TTL_MS` | `900000` | Idle empty rooms are swept after this. |
 | `BOT_THINK_MS` | `1200` | Bot delay, so humans can follow what happened. |
+| `SHARE` | `0` | `1` opens an ngrok tunnel on startup (same as `pnpm share` / `--share`). |
+| `NGROK_AUTHTOKEN` | – | ngrok token, if not already in the ngrok CLI config. |
+| `NGROK_DOMAIN` | – | Optional reserved ngrok domain for a stable link. |
 
 The client can point at a different backend with `VITE_SERVER_URL`.
 

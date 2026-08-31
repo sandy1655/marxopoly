@@ -14,4 +14,11 @@ export declare const DEPOT_RENT: readonly [0, 25, 50, 100, 200];
 /** Works multiplier applied to the dice total, by works owned. */
 export declare const WORKS_MULTIPLIER: readonly [0, 4, 10];
 export declare function tileAt(id: number): Tile;
+/**
+ * Board index of the tile with this `name` (case-insensitive), so other data —
+ * the action cards especially — can point at a street by the exact name shown
+ * on the board and stay in sync when it is renamed. Throws with the list of
+ * valid names when nothing matches.
+ */
+export declare function tileIdByName(name: string): number;
 //# sourceMappingURL=board.d.ts.map

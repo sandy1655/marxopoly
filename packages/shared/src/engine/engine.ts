@@ -4,7 +4,7 @@ import {
   HOLDING_TILE,
   tileAt,
 } from '../data/board.js';
-import { cardById } from '../data/cards.js';
+import { FORTUNE_CARDS, LEDGER_CARDS, cardById } from '../data/cards.js';
 import { rollDice, shuffle } from '../rng.js';
 import type {
   ActionEnvelope,
@@ -377,10 +377,9 @@ function resolveLanding(
 function drawCard(g: GameState, player: Player, deck: 'fortune' | 'ledger', now: number): void {
   const pile = deck === 'fortune' ? g.fortuneDeck : g.ledgerDeck;
   if (pile.length === 0) {
+    const source = deck === 'fortune' ? FORTUNE_CARDS : LEDGER_CARDS;
     const reshuffled = shuffle(
-      deck === 'fortune'
-        ? ['f01','f02','f03','f04','f05','f06','f07','f08','f09','f10','f11','f12','f13','f14','f15','f16']
-        : ['l01','l02','l03','l04','l05','l06','l07','l08','l09','l10','l11','l12','l13','l14','l15','l16'],
+      source.map((c) => c.id),
       g.rngState,
     );
     g.rngState = reshuffled.state;

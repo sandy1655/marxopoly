@@ -6,11 +6,13 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
+    "share": "tsx watch src/index.ts --share",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@ngrok/ngrok": "^1.7.0",
     "@rentier/shared": "workspace:*",
     "compression": "^1.7.5",
     "cors": "^2.8.5",

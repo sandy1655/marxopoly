@@ -4,6 +4,7 @@ import Home from './components/Home.js';
 import Lobby from './components/Lobby.js';
 import GameRoom from './components/GameRoom.js';
 import Toast from './components/Toast.js';
+import ThemeToggle from './components/ThemeToggle.js';
 
 export default function App() {
   const game = useStore((s) => s.game);
@@ -21,6 +22,7 @@ export default function App() {
     <div className="app">
       {!connected && <div className="banner">Reconnecting to the server…</div>}
       {!roomId || !game ? <Home /> : game.phase === 'lobby' ? <Lobby /> : <GameRoom />}
+      <ThemeToggle />
       <Toast />
     </div>
   );

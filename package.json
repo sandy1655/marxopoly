@@ -10,6 +10,7 @@
     "dev": "pnpm --parallel --filter \"./packages/*\" dev",
     "build": "pnpm --filter @rentier/shared build && pnpm --filter @rentier/server build && pnpm --filter @rentier/client build",
     "start": "pnpm --filter @rentier/server start",
+    "share": "pnpm --filter @rentier/shared build && pnpm --filter @rentier/client build && pnpm --filter @rentier/server share",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm --filter @rentier/shared test",
     "clean": "rm -rf packages/*/dist packages/*/tsconfig.tsbuildinfo node_modules packages/*/node_modules"

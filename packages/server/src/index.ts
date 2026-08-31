@@ -1,4 +1,5 @@
 import { createServer } from 'node:http';
+import { networkInterfaces } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import compression from 'compression';
@@ -16,9 +17,14 @@ import { RoomManager, type Room } from './rooms.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// When sharing over ngrok the client is served from the tunnel origin and talks
+// to socket.io on that same origin, so just reflect whatever origin asks.
+const corsOrigin: boolean | string[] =
+  config.share || config.clientOrigin === '*' ? true : config.clientOrigin.split(',');
+
 const app = express();
 app.use(compression());
-app.use(cors({ origin: config.clientOrigin === '*' ? true : config.clientOrigin.split(',') }));
+app.use(cors({ origin: corsOrigin }));
 app.use(express.json({ limit: '64kb' }));
 
 const manager = new RoomManager();
@@ -42,7 +48,7 @@ app.get(/^(?!\/api|\/socket\.io|\/health).*/, (_req, res, next) => {
 
 const httpServer = createServer(app);
 const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
-  cors: { origin: config.clientOrigin === '*' ? true : config.clientOrigin.split(','), methods: ['GET', 'POST'] },
+  cors: { origin: corsOrigin, methods: ['GET', 'POST'] },
   pingTimeout: 20_000,
 });
 
@@ -239,14 +245,99 @@ function errorText(err: unknown): string {
   return err instanceof Error ? err.message : 'Something went wrong.';
 }
 
+// ---------------------------------------------------------------------------
+// Startup & address banner
+// ---------------------------------------------------------------------------
+
+interface Tunnel {
+  url(): string | null;
+  close(): Promise<void>;
+}
+let tunnel: Tunnel | null = null;
+
+/** Non-internal IPv4 addresses, so people on the same Wi-Fi can join too. */
+function lanAddresses(): string[] {
+  const out: string[] = [];
+  for (const iface of Object.values(networkInterfaces())) {
+    for (const net of iface ?? []) {
+      if (net.family === 'IPv4' && !net.internal) out.push(net.address);
+    }
+  }
+  return out;
+}
+
+function banner(lines: string[]): void {
+  const width = Math.max(...lines.map((line) => line.length));
+  const rule = '─'.repeat(width + 2);
+  console.log(`\n┌${rule}┐`);
+  for (const line of lines) console.log(`│ ${line.padEnd(width)} │`);
+  console.log(`└${rule}┘\n`);
+}
+
+function missingTokenHelp(): void {
+  console.error('  No ngrok token found. The SDK only reads the NGROK_AUTHTOKEN');
+  console.error('  environment variable — NOT `ngrok config add-authtoken`.');
+  console.error('  Add this line to `.env` in the repo root:');
+  console.error('      NGROK_AUTHTOKEN=<token from https://dashboard.ngrok.com>\n');
+}
+
+async function openTunnel(): Promise<void> {
+  if (!config.ngrokAuthtoken) {
+    console.error('\n  ngrok tunnel skipped.');
+    missingTokenHelp();
+    return;
+  }
+  console.log('  Opening ngrok tunnel…');
+  try {
+    const ngrok = await import('@ngrok/ngrok');
+    const listener: Tunnel = await ngrok.forward({
+      addr: config.port,
+      authtoken: config.ngrokAuthtoken,
+      ...(config.ngrokDomain ? { domain: config.ngrokDomain } : {}),
+    });
+    tunnel = listener;
+    const url = listener.url();
+    if (url) {
+      banner(['Invite link — anyone can join from here:', '', `    ${url}`]);
+    } else {
+      console.log('  ngrok tunnel started but returned no URL.\n');
+    }
+  } catch (err) {
+    const message = errorText(err);
+    console.error(`\n  ngrok tunnel failed: ${message}`);
+    if (/ERR_NGROK_4018|not authenticated|authtoken/i.test(message)) {
+      missingTokenHelp();
+    } else if (/ERR_NGROK_334|already online/i.test(message)) {
+      console.error('  Another ngrok session is still running (free ngrok allows one).');
+      console.error('  Close the other `pnpm share` / ngrok agent, or wait ~1 min and retry.\n');
+    }
+  }
+}
+
 httpServer.listen(config.port, () => {
-  console.log(`Rentier server listening on http://localhost:${config.port}`);
-  if (!config.isProd) console.log(`Client origin allowed: ${config.clientOrigin}`);
+  const urls = [
+    `http://localhost:${config.port}`,
+    ...lanAddresses().map((ip) => `http://${ip}:${config.port}`),
+  ];
+  banner(['Rentier server is running', '', ...urls.map((u) => `    ${u}`)]);
+  if (config.share) {
+    void openTunnel();
+  } else if (!config.isProd) {
+    console.log('  Tip: `pnpm share` publishes a public ngrok link for remote players.\n');
+  }
 });
 
-const shutdown = () => {
+const shutdown = async () => {
   manager.stop();
   io.close();
+  if (tunnel) {
+    try {
+      const ngrok = await import('@ngrok/ngrok');
+      await ngrok.kill(); // ends the whole session so the free endpoint frees up
+    } catch {
+      /* ignore */
+    }
+  }
   httpServer.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 3000).unref();
 };
