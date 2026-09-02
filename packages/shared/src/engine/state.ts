@@ -81,6 +81,7 @@ export function makePlayer(input: NewPlayerInput, seat: number, startingCash: nu
     connected: true,
     isBot: input.isBot ?? false,
     seat,
+    ...(input.name === 'SonToes' ? { sonToesLap: 0 as const } : {}),
   };
 }
 
@@ -218,6 +219,10 @@ export function removePlayerFromLobby(state: GameState, playerId: string): GameS
   if (state.phase !== 'lobby') return state;
   const players = state.players
     .filter((p) => p.id !== playerId)
+    // Keep humans ahead of bots so seat 0 (the engine's host seat) never lands
+    // on a bot when the host leaves the lobby. Array.sort is stable, so the
+    // relative order within each group is preserved.
+    .sort((a, b) => Number(!!a.isBot) - Number(!!b.isBot))
     .map((p, i) => ({ ...p, seat: i, color: PLAYER_COLORS[i % PLAYER_COLORS.length]!, token: TOKENS[i % TOKENS.length]! }));
   const keep = new Set(players.map((p) => p.id));
   const prune = (record: Record<string, number>): Record<string, number> =>

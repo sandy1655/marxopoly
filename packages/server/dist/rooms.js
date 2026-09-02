@@ -3,6 +3,8 @@ import { addCard, addPlayerToLobby, applyAction, applySettings, createGame, curr
 import { config } from './config.js';
 import { decideBotAction } from './bot.js';
 const BOT_NAMES = ['Mira', 'Oslo', 'Pike', 'Junot', 'Wren', 'Cass', 'Bly', 'Nero'];
+/** Hard ceiling on live rooms, so room-create spam cannot exhaust memory. */
+const MAX_ROOMS = 400;
 export class RoomManager {
     rooms = new Map();
     onChange = () => { };
@@ -41,10 +43,9 @@ export class RoomManager {
             .map((r) => ({
             id: r.id,
             name: r.name,
-            hostId: r.hostId,
             playerCount: r.state.players.filter((p) => !p.bankrupt).length,
             maxPlayers: r.state.settings.maxPlayers,
-            spectatorCount: r.spectators,
+            spectatorCount: r.spectatorSockets.size,
             phase: r.state.phase,
             isPrivate: r.isPrivate,
             createdAt: r.createdAt,
@@ -56,6 +57,9 @@ export class RoomManager {
     // Membership
     // -------------------------------------------------------------------------
     create(opts) {
+        if (this.rooms.size >= MAX_ROOMS) {
+            throw new Error('The server is at capacity right now. Try again in a few minutes.');
+        }
         const id = shortCode();
         const playerId = randomUUID();
         const token = randomUUID();
@@ -71,9 +75,10 @@ export class RoomManager {
             createdAt: Date.now(),
             state,
             tokens: new Map([[playerId, token]]),
+            tokenExpiry: new Map([[playerId, Date.now() + config.reconnectTokenTtlMs]]),
             sockets: new Map(),
             chat: [],
-            spectators: 0,
+            spectatorSockets: new Set(),
             dropTimers: new Map(),
             botTimer: null,
             lastActivity: Date.now(),
@@ -85,16 +90,20 @@ export class RoomManager {
         const room = this.rooms.get(roomId.toUpperCase());
         if (!room)
             return { ok: false, error: 'That room does not exist.' };
-        // Reconnect path: a known token gets its seat back, even mid-game.
+        // Reconnect path: a known, unexpired token gets its seat back, even mid-game.
         if (token) {
             for (const [playerId, stored] of room.tokens) {
                 if (stored !== token)
                     continue;
+                if (Date.now() > (room.tokenExpiry.get(playerId) ?? 0))
+                    break; // expired — treat as a fresh join
                 const timer = room.dropTimers.get(playerId);
                 if (timer) {
                     clearTimeout(timer);
                     room.dropTimers.delete(playerId);
                 }
+                // Sliding expiry: an actively used seat keeps its token alive.
+                room.tokenExpiry.set(playerId, Date.now() + config.reconnectTokenTtlMs);
                 // If another socket still holds this seat, it is a stale tab: hand the
                 // seat to the new socket and tell the old one it has been replaced.
                 const previous = room.sockets.get(playerId);
@@ -107,7 +116,7 @@ export class RoomManager {
         }
         // A game already under way has no seats to give — join as a viewer instead.
         if (room.state.phase !== 'lobby') {
-            room.spectators += 1;
+            room.spectatorSockets.add(socketId);
             room.lastActivity = Date.now();
             this.emit(room);
             return { ok: true, room, spectator: true };
@@ -119,6 +128,7 @@ export class RoomManager {
         const newToken = randomUUID();
         room.state = addPlayerToLobby(room.state, { id: playerId, name: clean(playerName) });
         room.tokens.set(playerId, newToken);
+        room.tokenExpiry.set(playerId, Date.now() + config.reconnectTokenTtlMs);
         room.sockets.set(playerId, socketId);
         room.lastActivity = Date.now();
         this.emit(room);
@@ -146,6 +156,7 @@ export class RoomManager {
             return 'You cannot remove yourself.';
         room.state = removePlayerFromLobby(room.state, targetId);
         room.tokens.delete(targetId);
+        room.tokenExpiry.delete(targetId);
         room.sockets.delete(targetId);
         this.emit(room);
         return null;
@@ -197,6 +208,7 @@ export class RoomManager {
         if (room.state.phase === 'lobby') {
             room.state = removePlayerFromLobby(room.state, playerId);
             room.tokens.delete(playerId);
+            room.tokenExpiry.delete(playerId);
             if (room.hostId === playerId) {
                 const next = room.state.players.find((p) => !p.isBot);
                 if (next)
@@ -217,6 +229,7 @@ export class RoomManager {
             room.dropTimers.delete(playerId);
         }
         room.tokens.delete(playerId);
+        room.tokenExpiry.delete(playerId);
         if (room.state.phase !== 'game_over') {
             this.dispatchInternal(room, playerId, { type: 'resign' });
         }
@@ -224,9 +237,10 @@ export class RoomManager {
             this.emit(room);
         }
     }
-    /** A viewer closed the tab or left; just drop the head count. */
-    leaveSpectator(room) {
-        room.spectators = Math.max(0, room.spectators - 1);
+    /** A viewer closed the tab or left; drop them from the watch set. */
+    leaveSpectator(room, socketId) {
+        if (!room.spectatorSockets.delete(socketId))
+            return;
         room.lastActivity = Date.now();
         this.emit(room);
     }
@@ -300,7 +314,7 @@ export class RoomManager {
         const now = Date.now();
         for (const room of [...this.rooms.values()]) {
             if (room.sockets.size === 0 &&
-                room.spectators === 0 &&
+                room.spectatorSockets.size === 0 &&
                 now - room.lastActivity > config.emptyRoomTtlMs) {
                 this.destroy(room.id);
                 continue;
@@ -369,10 +383,13 @@ function pickBotActor(state) {
 function clean(value) {
     return (value ?? '').toString().replace(/\s+/g, ' ').trim().slice(0, 24);
 }
+// 6 chars from a 31-char alphabet ≈ 887M codes. Combined with join rate limiting
+// this keeps "private" (unlisted) rooms effectively unguessable.
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const CODE_LENGTH = 6;
 function shortCode() {
     let out = '';
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < CODE_LENGTH; i++) {
         out += CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)];
     }
     return out;

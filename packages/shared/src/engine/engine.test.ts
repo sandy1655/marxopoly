@@ -286,6 +286,40 @@ describe('trading', () => {
     });
     expect(expectReject(g, 'c', { type: 'accept_trade', tradeId: g.trades[0]!.id })).toMatch(/not addressed/);
   });
+
+  it('charges the receiver 10% interest when a mortgaged deed changes hands', () => {
+    let g = act(newGame(), 'a', { type: 'start_game' });
+    g.deeds[39]!.ownerId = 'a';
+    g.deeds[39]!.mortgaged = true;
+    const bBefore = getPlayer(g, 'b')!.cash;
+    g = act(g, 'a', {
+      type: 'propose_trade',
+      toId: 'b',
+      give: { cash: 0, tileIds: [39], reprieveCards: 0 },
+      receive: { cash: 0, tileIds: [], reprieveCards: 0 },
+    });
+    g = act(g, 'b', { type: 'accept_trade', tradeId: g.trades[0]!.id });
+    expect(g.deeds[39]!.ownerId).toBe('b');
+    expect(g.deeds[39]!.mortgaged).toBe(true);
+    // Bern price 400 -> mortgage value 200 -> 10% = 20.
+    expect(getPlayer(g, 'b')!.cash).toBe(bBefore - 20);
+  });
+
+  it('refuses trades once the game is over', () => {
+    let g = act(newGame(), 'a', { type: 'start_game' });
+    g.deeds[1]!.ownerId = 'a';
+    g = act(g, 'a', {
+      type: 'propose_trade',
+      toId: 'b',
+      give: { cash: 0, tileIds: [1], reprieveCards: 0 },
+      receive: { cash: 50, tileIds: [], reprieveCards: 0 },
+    });
+    const tradeId = g.trades[0]!.id;
+    g = act(g, 'b', { type: 'resign' });
+    g = act(g, 'c', { type: 'resign' });
+    expect(g.phase).toBe('game_over');
+    expect(expectReject(g, 'b', { type: 'accept_trade', tradeId })).toMatch(/closed/i);
+  });
 });
 
 describe('debt and bankruptcy', () => {
@@ -493,5 +527,67 @@ describe('end-of-game stats', () => {
     g = act(g, 'a', { type: 'roll_dice' });
     expect(g.stats.plazaTake.a).toBe(300);
     expect(g.plazaPot).toBe(0);
+  });
+});
+
+describe('SonToes easter egg', () => {
+  function sonToesGame(): GameState {
+    const g = createGame('sontoes', [
+      { id: 'a', name: 'SonToes' },
+      { id: 'b', name: 'Brix' },
+    ], { seed: 7, turnSeconds: 0, auctionsEnabled: false });
+    return act(g, 'a', { type: 'start_game' });
+  }
+
+  interface Turn {
+    from: number;
+    to: number;
+    dice: [number, number];
+  }
+
+  /** Take `turns` solo turns for 'a', recording each move. */
+  function walk(start: GameState, turns: number): { history: Turn[]; end: GameState } {
+    let g = start;
+    const history: Turn[] = [];
+    for (let i = 0; i < turns; i++) {
+      g = structuredClone(g);
+      const p = getPlayer(g, 'a')!;
+      g.turnSeat = p.seat;
+      g.phase = 'pre_roll';
+      g.hasRolled = false;
+      g.dice = null;
+      g.doublesInARow = 0;
+      p.inHolding = false;
+      const from = p.position;
+      g = act(g, 'a', { type: 'roll_dice' });
+      if (g.phase === 'awaiting_buy') g = act(g, 'a', { type: 'decline_property' });
+      history.push({ from, to: getPlayer(g, 'a')!.position, dice: g.dice as [number, number] });
+    }
+    return { history, end: g };
+  }
+
+  it('rigs the dice so SonToes lands on Zuerich then Bern before finishing lap one', () => {
+    const { history, end } = walk(sonToesGame(), 10);
+    const stops = history.map((t) => t.to);
+    const zuerich = stops.indexOf(37);
+    const bern = stops.indexOf(39);
+    expect(zuerich).toBeGreaterThanOrEqual(0);
+    expect(bern).toBe(zuerich + 1);
+    // Nothing before Zuerich wraps past Start.
+    expect(stops.slice(0, zuerich).every((pos) => pos < 37)).toBe(true);
+    expect(getPlayer(end, 'a')!.sonToesLap).toBe(2);
+
+    // The pips shown must add up to the distance actually travelled — no jump.
+    for (const t of history) {
+      const [d1, d2] = t.dice;
+      expect(d1).toBeGreaterThanOrEqual(1);
+      expect(d2).toBeLessThanOrEqual(6);
+      const travelled = ((t.to - t.from) % 40 + 40) % 40;
+      expect(d1 + d2).toBe(travelled);
+    }
+  });
+
+  it('leaves everyone else on ordinary dice', () => {
+    expect(getPlayer(sonToesGame(), 'b')!.sonToesLap).toBeUndefined();
   });
 });

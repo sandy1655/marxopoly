@@ -23,6 +23,8 @@ export const config = {
     clientOrigin: process.env.CLIENT_ORIGIN ?? 'http://localhost:5173',
     /** How long a disconnected player keeps their seat. */
     reconnectGraceMs: int(process.env.RECONNECT_GRACE_MS, 120_000),
+    /** How long a reconnect token stays valid (refreshed on each use). */
+    reconnectTokenTtlMs: int(process.env.RECONNECT_TOKEN_TTL_MS, 12 * 60 * 60_000),
     turnTimeoutSeconds: int(process.env.TURN_TIMEOUT_SECONDS, 90),
     /** Rooms with no connected players are swept after this long. */
     emptyRoomTtlMs: int(process.env.EMPTY_ROOM_TTL_MS, 15 * 60_000),

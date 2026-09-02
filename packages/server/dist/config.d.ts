@@ -3,6 +3,8 @@ export declare const config: {
     clientOrigin: string;
     /** How long a disconnected player keeps their seat. */
     reconnectGraceMs: number;
+    /** How long a reconnect token stays valid (refreshed on each use). */
+    reconnectTokenTtlMs: number;
     turnTimeoutSeconds: number;
     /** Rooms with no connected players are swept after this long. */
     emptyRoomTtlMs: number;

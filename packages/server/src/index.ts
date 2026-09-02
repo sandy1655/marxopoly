@@ -10,6 +10,7 @@ import type {
   ClientToServerEvents,
   GameAction,
   GameSettings,
+  GameState,
   ServerToClientEvents,
 } from '@marxopoly/shared';
 import { config } from './config.js';
@@ -17,14 +18,41 @@ import { RoomManager, type Room } from './rooms.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// When sharing over ngrok the client is served from the tunnel origin and talks
-// to socket.io on that same origin, so just reflect whatever origin asks.
-const corsOrigin: boolean | string[] =
-  config.share || config.clientOrigin === '*' ? true : config.clientOrigin.split(',');
+// CLIENT_ORIGIN=* is an explicit opt-in to a fully open CORS policy. Otherwise
+// we allow only: the configured origin(s), localhost, private-LAN addresses,
+// and the ngrok tunnel origin once it is known.
+const openCors = config.clientOrigin === '*';
+const staticOrigins = openCors
+  ? []
+  : config.clientOrigin.split(',').map((o) => o.trim()).filter(Boolean);
+let tunnelOrigin: string | null = null;
+
+function originAllowed(origin?: string): boolean {
+  if (!origin) return true; // same-origin, curl, native apps
+  if (staticOrigins.includes(origin)) return true;
+  if (tunnelOrigin && origin === tunnelOrigin) return true;
+  try {
+    const { hostname, protocol } = new URL(origin);
+    if (protocol !== 'http:' && protocol !== 'https:') return false;
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') return true;
+    if (/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname)) return true;
+    if (/^192\.168\.\d{1,3}\.\d{1,3}$/.test(hostname)) return true;
+    if (/^172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}$/.test(hostname)) return true;
+  } catch {
+    /* not a parseable origin */
+  }
+  return false;
+}
 
 const app = express();
 app.use(compression());
-app.use(cors({ origin: corsOrigin }));
+app.use(
+  cors(
+    openCors
+      ? { origin: true }
+      : (req, cb) => cb(null, { origin: originAllowed(req.headers.origin ?? undefined) }),
+  ),
+);
 app.use(express.json({ limit: '64kb' }));
 
 const manager = new RoomManager();
@@ -48,21 +76,50 @@ app.get(/^(?!\/api|\/socket\.io|\/health).*/, (_req, res, next) => {
 
 const httpServer = createServer(app);
 const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
-  cors: { origin: corsOrigin, methods: ['GET', 'POST'] },
+  cors: openCors
+    ? { origin: true, methods: ['GET', 'POST'] }
+    : { origin: (origin, cb) => cb(null, originAllowed(origin ?? undefined)), methods: ['GET', 'POST'] },
   pingTimeout: 20_000,
+  // Cap inbound frames; nothing this app accepts is anywhere near this size.
+  maxHttpBufferSize: 32_768,
 });
 
 /** socket.id -> where that socket is seated. `spectator` sockets have no game seat. */
 const seats = new Map<string, { roomId: string; playerId: string; spectator?: boolean }>();
 
+/**
+ * The client never needs the RNG or the undrawn deck order — sending them lets
+ * anyone predict every future roll and card. Strip them from every broadcast.
+ */
+function publicState(state: GameState): GameState {
+  return {
+    ...state,
+    rngState: 0,
+    settings: { ...state.settings, seed: 0 },
+    fortuneDeck: [],
+    ledgerDeck: [],
+  };
+}
+
+function roomStatePayload(room: Room): { state: GameState; hostId: string; roomName: string } {
+  return { state: publicState(room.state), hostId: room.hostId, roomName: room.name };
+}
+
+// Coalesce lobby-list broadcasts: a burst of room changes produces one emit.
+let listBroadcastPending = false;
+function broadcastRoomList(): void {
+  if (listBroadcastPending) return;
+  listBroadcastPending = true;
+  setTimeout(() => {
+    listBroadcastPending = false;
+    io.emit('room:list', manager.list());
+  }, 400);
+}
+
 manager.bind(
   (room) => {
-    io.to(room.id).emit('room:state', {
-      state: room.state,
-      hostId: room.hostId,
-      roomName: room.name,
-    });
-    io.emit('room:list', manager.list());
+    io.to(room.id).emit('room:state', roomStatePayload(room));
+    broadcastRoomList();
   },
   (room, message) => {
     io.to(room.id).emit('room:chat', message);
@@ -70,17 +127,62 @@ manager.bind(
 );
 manager.start();
 
+// ---------------------------------------------------------------------------
+// Per-socket rate limiting (token bucket) + per-connection room-creation cap
+// ---------------------------------------------------------------------------
+
+const RATE_CAPACITY = 40;
+const RATE_REFILL_PER_SEC = 15;
+const rateBuckets = new Map<string, { tokens: number; ts: number }>();
+const roomsCreatedBy = new Map<string, number>();
+const MAX_ROOMS_PER_CONNECTION = 8;
+
+function rateLimited(socketId: string, cost = 1): boolean {
+  const now = Date.now();
+  let bucket = rateBuckets.get(socketId);
+  if (!bucket) {
+    bucket = { tokens: RATE_CAPACITY, ts: now };
+    rateBuckets.set(socketId, bucket);
+  }
+  bucket.tokens = Math.min(
+    RATE_CAPACITY,
+    bucket.tokens + ((now - bucket.ts) / 1000) * RATE_REFILL_PER_SEC,
+  );
+  bucket.ts = now;
+  if (bucket.tokens < cost) return true;
+  bucket.tokens -= cost;
+  return false;
+}
+
+type GameSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
+type Ack = (res: { ok: boolean; error?: string }) => void;
+
+/** Returns true (and answers the caller) when this socket is over its budget. */
+function tooFast(socket: GameSocket, ack?: Ack, cost = 1): boolean {
+  if (!rateLimited(socket.id, cost)) return false;
+  const message = 'You are doing that too fast — slow down for a moment.';
+  if (ack) ack({ ok: false, error: message });
+  else socket.emit('room:error', { message });
+  return true;
+}
+
 io.on('connection', (socket) => {
   socket.emit('room:list', manager.list());
 
   socket.on('lobby:list', () => {
+    if (tooFast(socket)) return;
     socket.emit('room:list', manager.list());
   });
 
   socket.on('room:create', (payload, ack) => {
+    if (tooFast(socket, ack, 5)) return;
     try {
       if (!payload?.playerName?.trim()) {
         ack({ ok: false, error: 'Pick a name first.' });
+        return;
+      }
+      if ((roomsCreatedBy.get(socket.id) ?? 0) >= MAX_ROOMS_PER_CONNECTION) {
+        ack({ ok: false, error: 'You have opened too many rooms from this connection.' });
         return;
       }
       const { room, playerId, token } = manager.create({
@@ -89,6 +191,7 @@ io.on('connection', (socket) => {
         isPrivate: !!payload.isPrivate,
         settings: sanitizeSettings(payload.settings),
       });
+      roomsCreatedBy.set(socket.id, (roomsCreatedBy.get(socket.id) ?? 0) + 1);
       seatSocket(socket, room, playerId, token);
       ack({ ok: true, roomId: room.id });
     } catch (err) {
@@ -97,6 +200,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('room:join', (payload, ack) => {
+    if (tooFast(socket, ack, 4)) return;
     try {
       const result = manager.join(
         (payload?.roomId ?? '').trim(),
@@ -127,6 +231,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('room:action', (action: GameAction, ack) => {
+    if (tooFast(socket, ack)) return;
     const seat = seats.get(socket.id);
     if (!seat) {
       ack?.({ ok: false, error: 'You are not in a room.' });
@@ -147,6 +252,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('room:chat', (text) => {
+    if (tooFast(socket)) return;
     const seat = seats.get(socket.id);
     if (!seat) return;
     const room = manager.get(seat.roomId);
@@ -155,6 +261,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('room:settings', (settings) => {
+    if (tooFast(socket)) return;
     const seat = seats.get(socket.id);
     if (!seat) return;
     const room = manager.get(seat.roomId);
@@ -164,6 +271,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('room:add_bot', () => {
+    if (tooFast(socket)) return;
     const seat = seats.get(socket.id);
     if (!seat) return;
     const room = manager.get(seat.roomId);
@@ -173,6 +281,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('room:kick', (playerId) => {
+    if (tooFast(socket)) return;
     const seat = seats.get(socket.id);
     if (!seat) return;
     const room = manager.get(seat.roomId);
@@ -182,6 +291,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('room:rename_tile', (payload) => {
+    if (tooFast(socket)) return;
     const seat = seats.get(socket.id);
     if (!seat) return;
     const room = manager.get(seat.roomId);
@@ -193,6 +303,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('room:add_card', (card) => {
+    if (tooFast(socket)) return;
     const seat = seats.get(socket.id);
     if (!seat) return;
     const room = manager.get(seat.roomId);
@@ -202,6 +313,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('room:remove_card', (cardId) => {
+    if (tooFast(socket)) return;
     const seat = seats.get(socket.id);
     if (!seat) return;
     const room = manager.get(seat.roomId);
@@ -217,30 +329,30 @@ io.on('connection', (socket) => {
     seats.delete(socket.id);
     socket.leave(seat.roomId);
     if (room) {
-      if (seat.spectator) manager.leaveSpectator(room);
+      if (seat.spectator) manager.leaveSpectator(room, socket.id);
       else manager.leave(room, seat.playerId);
     }
     socket.emit('room:left', { reason: seat.spectator ? 'You stopped watching.' : 'You left the table.' });
   });
 
   socket.on('disconnect', () => {
+    rateBuckets.delete(socket.id);
+    roomsCreatedBy.delete(socket.id);
     const seat = seats.get(socket.id);
     if (!seat) return;
     seats.delete(socket.id);
     const room = manager.get(seat.roomId);
     if (!room) return;
-    if (seat.spectator) manager.leaveSpectator(room);
+    if (seat.spectator) manager.leaveSpectator(room, socket.id);
     else manager.markDisconnected(room, seat.playerId);
   });
 });
-
-type GameSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
 
 function seatSocket(socket: GameSocket, room: Room, playerId: string, token: string): void {
   seats.set(socket.id, { roomId: room.id, playerId });
   socket.join(room.id);
   socket.emit('room:joined', { roomId: room.id, playerId, token });
-  socket.emit('room:state', { state: room.state, hostId: room.hostId, roomName: room.name });
+  socket.emit('room:state', roomStatePayload(room));
   for (const message of room.chat.slice(-30)) socket.emit('room:chat', message);
 }
 
@@ -250,7 +362,7 @@ function seatSpectator(socket: GameSocket, room: Room): void {
   seats.set(socket.id, { roomId: room.id, playerId: viewerId, spectator: true });
   socket.join(room.id);
   socket.emit('room:joined', { roomId: room.id, playerId: viewerId, token: '', spectator: true });
-  socket.emit('room:state', { state: room.state, hostId: room.hostId, roomName: room.name });
+  socket.emit('room:state', roomStatePayload(room));
   for (const message of room.chat.slice(-30)) socket.emit('room:chat', message);
 }
 
@@ -347,6 +459,11 @@ async function openTunnel(): Promise<void> {
     tunnel = listener;
     const url = listener.url();
     if (url) {
+      try {
+        tunnelOrigin = new URL(url).origin;
+      } catch {
+        /* keep tunnelOrigin null; the configured origins still work */
+      }
       banner(['Invite link — anyone can join from here:', '', `    ${url}`]);
     } else {
       console.log('  ngrok tunnel started but returned no URL.\n');

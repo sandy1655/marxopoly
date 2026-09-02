@@ -58,11 +58,11 @@ export default function Home() {
             <input
               className="input code"
               value={code}
-              maxLength={5}
-              placeholder="ABC12"
+              maxLength={6}
+              placeholder="ABC123"
               onChange={(e) => setCode(e.target.value.toUpperCase())}
             />
-            <button className="btn" disabled={!nameOk || code.length < 4 || joining} onClick={() => joinRoom(code)}>
+            <button className="btn" disabled={!nameOk || code.length < 6 || joining} onClick={() => joinRoom(code)}>
               Join
             </button>
           </div>

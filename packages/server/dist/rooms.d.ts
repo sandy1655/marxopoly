@@ -8,11 +8,13 @@ export interface Room {
     state: GameState;
     /** playerId -> reconnect token. */
     tokens: Map<string, string>;
+    /** playerId -> epoch ms after which the reconnect token is refused. */
+    tokenExpiry: Map<string, number>;
     /** playerId -> socket id, only for connected players. */
     sockets: Map<string, string>;
     chat: ChatMessage[];
-    /** Sockets watching without a seat. Kept only for the lobby listing count. */
-    spectators: number;
+    /** Socket ids currently watching without a seat. */
+    spectatorSockets: Set<string>;
     /** playerId -> timer that forfeits the seat if they never come back. */
     dropTimers: Map<string, NodeJS.Timeout>;
     botTimer: NodeJS.Timeout | null;
@@ -60,8 +62,8 @@ export declare class RoomManager {
     addCard(room: Room, requesterId: string, input: unknown): string | null;
     removeCard(room: Room, requesterId: string, cardId: string): string | null;
     leave(room: Room, playerId: string): void;
-    /** A viewer closed the tab or left; just drop the head count. */
-    leaveSpectator(room: Room): void;
+    /** A viewer closed the tab or left; drop them from the watch set. */
+    leaveSpectator(room: Room, socketId: string): void;
     /** Called when a socket drops; the seat is held open for the grace period. */
     markDisconnected(room: Room, playerId: string): void;
     dispatch(room: Room, playerId: string, action: GameAction, spectator?: boolean): string | null;

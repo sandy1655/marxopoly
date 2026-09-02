@@ -53,7 +53,10 @@ export function applyAction(state: GameState, envelope: ActionEnvelope): ApplyRe
     const error = dispatch(g, playerId, action, now);
     if (error) return { ok: false, error };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : 'Unexpected engine error' };
+    // A throw here is an engine bug, not a rejected move. Log it where the
+    // engine runs (the server) but never surface internals to the client.
+    console.error('[engine] uncaught error while applying action', action?.type, err);
+    return { ok: false, error: 'That action could not be completed.' };
   }
 
   g.version += 1;
@@ -222,7 +225,24 @@ function doRoll(g: GameState, playerId: string, now: number): string | null {
 
   const draw = rollDice(g.rngState);
   g.rngState = draw.state;
-  const [a, b] = draw.value;
+  let [a, b] = draw.value;
+
+  // Easter egg: on his first lap the player named "SonToes" gets fixed dice so
+  // he lands squarely on the two priciest streets. The pips shown always add up
+  // to the distance actually travelled, so nothing looks off.
+  const rig = riggedSonToesDice(player);
+  if (rig) {
+    [a, b] = rig;
+    player.sonToesLap = ((player.sonToesLap ?? 0) + 1) as 0 | 1 | 2;
+  } else if (player.sonToesLap === 0 || player.sonToesLap === 1) {
+    // A real roll while the egg is armed only happens when he is still too far
+    // for one roll to hit the street exactly. If a big roll would carry him onto
+    // or past it anyway, that street is forfeited so the egg keeps advancing.
+    if (player.position + a + b >= SONTOES_STREETS[player.sonToesLap]) {
+      player.sonToesLap = (player.sonToesLap + 1) as 0 | 1 | 2;
+    }
+  }
+
   g.dice = [a, b];
   const total = a + b;
   const isDouble = a === b;
@@ -277,10 +297,30 @@ function doRoll(g: GameState, playerId: string, now: number): string | null {
   return null;
 }
 
+/** The two priciest streets, in board order. See Player.sonToesLap. */
+const SONTOES_STREETS = [37, 39] as const;
+
 function movePlayerBy(g: GameState, player: Player, steps: number, now: number): void {
   const target = ((player.position + steps) % BOARD_SIZE + BOARD_SIZE) % BOARD_SIZE;
   const passedStart = steps > 0 && player.position + steps >= BOARD_SIZE;
   moveTo(g, player, target, passedStart, now, steps);
+}
+
+/**
+ * Easter egg: fixed dice for the player named "SonToes" while `sonToesLap` is 0
+ * or 1, so his roll lands him exactly on Zuerich then Bern. Returns the two pip
+ * values (which sum to the exact distance), or null to roll for real — either
+ * because the egg is spent or because the street is still more than one roll
+ * (>12) or less than a legal roll (<2) away.
+ */
+function riggedSonToesDice(player: Player): [number, number] | null {
+  const lap = player.sonToesLap;
+  if (lap !== 0 && lap !== 1) return null;
+  if (player.inHolding) return null;
+  const dist = SONTOES_STREETS[lap] - player.position;
+  if (dist < 2 || dist > 12) return null;
+  const a = Math.min(6, dist - 1);
+  return [a, dist - a];
 }
 
 function moveTo(
@@ -753,6 +793,17 @@ function validateSide(g: GameState, ownerId: string, side: TradeSide): string | 
   return null;
 }
 
+/** 10% of the mortgage value for every mortgaged deed in the list. */
+function mortgageInterestOwed(g: GameState, tileIds: number[]): number {
+  let total = 0;
+  for (const id of tileIds) {
+    const deed = g.deeds[id];
+    const tile = ownableTile(id);
+    if (deed?.mortgaged && tile) total += Math.ceil(mortgageValue(tile) * 0.1);
+  }
+  return total;
+}
+
 function doProposeTrade(
   g: GameState,
   playerId: string,
@@ -795,6 +846,7 @@ function doProposeTrade(
 }
 
 function doAcceptTrade(g: GameState, playerId: string, tradeId: string, now: number): string | null {
+  if (g.phase === 'lobby' || g.phase === 'game_over') return 'Trading is closed.';
   const index = g.trades.findIndex((t) => t.id === tradeId);
   if (index === -1) return 'That offer is gone.';
   const offer = g.trades[index]!;
@@ -814,6 +866,20 @@ function doAcceptTrade(g: GameState, playerId: string, tradeId: string, now: num
   const from = getPlayer(g, offer.fromId)!;
   const to = getPlayer(g, offer.toId)!;
 
+  // Whoever receives a mortgaged deed owes the bank 10% interest right away
+  // (they can lift the mortgage separately later). Reject the whole trade if
+  // either side cannot cover it once the cash swap settles.
+  const fromInterest = mortgageInterestOwed(g, offer.receive.tileIds);
+  const toInterest = mortgageInterestOwed(g, offer.give.tileIds);
+  const fromCashAfter = from.cash - offer.give.cash + offer.receive.cash;
+  const toCashAfter = to.cash + offer.give.cash - offer.receive.cash;
+  if (fromCashAfter < fromInterest) {
+    return `${from.name} cannot cover the 10% interest on the mortgaged property in this trade.`;
+  }
+  if (toCashAfter < toInterest) {
+    return `${to.name} cannot cover the 10% interest on the mortgaged property in this trade.`;
+  }
+
   from.cash -= offer.give.cash;
   to.cash += offer.give.cash;
   to.cash -= offer.receive.cash;
@@ -826,6 +892,17 @@ function doAcceptTrade(g: GameState, playerId: string, tradeId: string, now: num
 
   for (const id of offer.give.tileIds) g.deeds[id]!.ownerId = to.id;
   for (const id of offer.receive.tileIds) g.deeds[id]!.ownerId = from.id;
+
+  if (fromInterest > 0) {
+    from.cash -= fromInterest;
+    payOut(g, null, fromInterest);
+    log(g, 'money', `${from.name} paid ${money(fromInterest)} mortgage interest.`, from.id);
+  }
+  if (toInterest > 0) {
+    to.cash -= toInterest;
+    payOut(g, null, toInterest);
+    log(g, 'money', `${to.name} paid ${money(toInterest)} mortgage interest.`, to.id);
+  }
 
   g.trades.splice(index, 1);
   // Any other open offer touching these assets is now suspect; drop them.

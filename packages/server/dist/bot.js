@@ -113,7 +113,15 @@ function valueTrade(state, playerId) {
     const incoming = offer.give.cash + offer.give.tileIds.reduce((s, id) => s + tilePrice(id), 0);
     const outgoing = offer.receive.cash + offer.receive.tileIds.reduce((s, id) => s + tilePrice(id), 0);
     const me = getPlayer(state, playerId);
-    if (!me || me.cash < offer.receive.cash)
+    if (!me)
+        return false;
+    // Interest the engine will charge for any mortgaged deed coming our way.
+    const interest = offer.give.tileIds.reduce((s, id) => {
+        const deed = state.deeds[id];
+        const tile = ownableTile(id);
+        return deed?.mortgaged && tile ? s + Math.ceil(Math.floor(tile.price / 2) * 0.1) : s;
+    }, 0);
+    if (me.cash < offer.receive.cash + interest)
         return false;
     return incoming >= outgoing * 1.2;
 }

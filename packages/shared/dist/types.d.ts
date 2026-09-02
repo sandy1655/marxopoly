@@ -116,6 +116,13 @@ export interface Player {
     seat: number;
     /** Set when the player goes bankrupt, for the final scoreboard. */
     finishedRank?: number;
+    /**
+     * Easter egg for the player named "SonToes": while this is set, his dice are
+     * fixed (pips still add up to the real distance) so he lands squarely on the
+     * two priciest streets on his first lap. 0 = heading for Zuerich, 1 = heading
+     * for Bern, 2 = spent. Only ever set for a player literally named "SonToes".
+     */
+    sonToesLap?: 0 | 1 | 2;
 }
 export interface Deed {
     tileId: number;
@@ -324,7 +331,6 @@ export type ApplyResult = {
 export interface RoomSummary {
     id: string;
     name: string;
-    hostId: string;
     playerCount: number;
     maxPlayers: number;
     /** How many people are currently watching without a seat. */
