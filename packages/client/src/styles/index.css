@@ -32,11 +32,17 @@
   --hint-ink: #e8c877;
   --field-bg: #0f1626;
 
-  /* Board surfaces — deliberately theme-independent. */
+  /* Board surfaces — deliberately theme-independent. The active map overrides
+     these on the .board element (see src/maps/). */
   --board-face: #ffffff;
   --board-frame: #b9c8de;
+  --board-gap: 3px;
+  --board-pad: 10px;
+  --board-radius: 18px;
   --tile-ink: #16202f;
   --tile-price-ink: #475569;
+  --tile-radius: 7px;
+  --tile-border: 1.5px solid var(--line-strong);
   --centre-bg: linear-gradient(150deg, #f8fbff, #eef4ff);
   --centre-ink: #16202f;
   --centre-muted: #64748b;
@@ -150,6 +156,14 @@ p { margin: 0 0 10px; }
 .check em { display: block; font-style: normal; color: var(--muted); font-size: 13px; }
 .field { display: block; margin-bottom: 12px; }
 .field > span { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px; font-weight: 600; }
+
+/* ----------------------------------------------------------- map picker */
+.map-picker { display: flex; align-items: center; gap: 8px; }
+.map-picker > span { font-size: 13px; color: var(--muted); font-weight: 600; }
+.map-picker .input {
+  width: auto; margin: 0; padding: 8px 10px; font-weight: 700;
+}
+.map-picker.compact .input { padding: 6px 9px; font-size: 13px; }
 
 .card {
   background: var(--surface);
@@ -267,23 +281,28 @@ p { margin: 0 0 10px; }
 }
 
 /* ================================================================= board */
-.board-wrap { flex: 1; min-height: 0; display: grid; place-items: center; }
+/* A size container, so the board can be sized from the space actually left
+   over next to the action bar instead of guessing at the viewport height. */
+.board-wrap { flex: 1; min-height: 0; display: grid; place-items: center; container-type: size; }
 .board {
   position: relative;
-  width: min(100%, calc(100vh - 168px));
+  /* Square, as large as fits — less the ring some maps paint outside their
+     border box (`--board-ring`: the cyber bezel, the poker rail, …). */
+  width: calc(min(100cqw, 100cqh) - 2 * var(--board-ring, 0px));
   aspect-ratio: 1 / 1;
   display: grid;
   grid-template-columns: 1.5fr repeat(9, 1fr) 1.5fr;
   grid-template-rows: 1.5fr repeat(9, 1fr) 1.5fr;
-  gap: 3px; padding: 10px;
+  gap: var(--board-gap, 3px); padding: var(--board-pad, 10px);
   background: var(--board-face); border: 3px solid var(--board-frame);
-  border-radius: 18px; box-shadow: var(--shadow);
+  border-radius: var(--board-radius, 18px); box-shadow: var(--shadow);
 }
 
 .tile {
   position: relative; overflow: hidden;
   background: var(--tile-bg, var(--board-face));
-  border: 1.5px solid var(--line-strong); border-radius: 7px;
+  border: var(--tile-border, 1.5px solid var(--line-strong));
+  border-radius: var(--tile-radius, 7px);
   padding: 0; color: var(--tile-ink); font: inherit; text-align: center;
   display: flex; cursor: default;
 }
@@ -333,8 +352,147 @@ p { margin: 0 0 10px; }
 .tile.edge-left .tile-owner-bar { left: 0; top: 0; bottom: 0; width: 6px; }
 .tile.edge-right .tile-owner-bar { right: 0; top: 0; bottom: 0; width: 6px; }
 
+/* --------------------------------------------------- dummy map (test skin) */
+.board-wrap.map-dummy .tile-name,
+.board-wrap.map-dummy .tile-price,
+.board-wrap.map-dummy .board-centre { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+.board-wrap.map-dummy .tile { text-transform: uppercase; }
+
+/* ------------------------------------------------- cyber map (LCD screen) */
+.board-wrap.map-cyber .tile-name,
+.board-wrap.map-cyber .tile-price,
+.board-wrap.map-cyber .tile-glyph,
+.board-wrap.map-cyber .board-centre {
+  font-family: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+}
+.board-wrap.map-cyber .tile { text-transform: uppercase; letter-spacing: 0.02em; }
+.board-wrap.map-cyber .tile.ownable { background: #9bbc0f; }
+/* Group colours are folded into the four-shade green ramp. */
+.board-wrap.map-cyber .tile-head {
+  filter: grayscale(1) sepia(1) hue-rotate(28deg) saturate(2.6) brightness(0.8);
+}
+.board-wrap.map-cyber .tile-buildings { text-shadow: none; color: #0f380f; }
+.board-wrap.map-cyber .tile-buildings .hotel { background: #0f380f; color: #9bbc0f; border-radius: 0; }
+.board-wrap.map-cyber .tile-mortgage { color: #0f380f; }
+/* Faint scanlines over the whole panel — pure CSS, drawn above the tiles. */
+/* The screen bezel around the panel. */
+.board-wrap.map-cyber .board {
+  box-shadow: 0 0 0 7px #0f380f, 0 0 0 10px #306230, 0 0 0 12px #0f380f, var(--shadow);
+}
+.board-wrap.map-cyber .board::after {
+  content: ''; position: absolute; inset: 0; z-index: 7; pointer-events: none;
+  border-radius: inherit;
+  background:
+    repeating-linear-gradient(180deg, rgba(15, 56, 15, 0.22) 0 1px, transparent 1px 4px),
+    radial-gradient(120% 120% at 50% 40%, transparent 55%, rgba(15, 56, 15, 0.22) 100%);
+}
+.board-wrap.map-cyber .board-centre { border: 2px solid #0f380f; border-radius: 2px; }
+.board-wrap.map-cyber .centre-turn,
+.board-wrap.map-cyber .centre-card {
+  background: #9bbc0f; border: 2px solid #0f380f; border-radius: 0;
+  box-shadow: none; color: #0f380f;
+}
+.board-wrap.map-cyber .centre-card { border-top-width: 5px; }
+.board-wrap.map-cyber .centre-pot { color: #0f380f; }
+.board-wrap.map-cyber .board-token { border-color: #0f380f; box-shadow: none; }
+.board-wrap.map-cyber .board-token.active { box-shadow: 0 0 0 3px #0f380f; }
+.board-wrap.map-cyber .die { filter: none; }
+.board-wrap.map-cyber .die rect { fill: #9bbc0f; stroke: #0f380f; stroke-width: 5; rx: 0; }
+.board-wrap.map-cyber .die .pip { fill: #0f380f; r: 10; }
+.board-wrap.map-cyber .dice.empty { color: #0f380f; }
+
+/* --------------------------------------------------- poker map (baize table) */
+.board-wrap.map-poker .tile.ownable { background: #f8f2e2; }
+.board-wrap.map-poker .tile.special { color: #f7f1e1; }
+.board-wrap.map-poker .tile.special .tile-price { color: #e6d6ab; }
+.board-wrap.map-poker .tile.corner { border-color: #d4af37; }
+/* The rail: a wooden ring around the felt. */
+.board-wrap.map-poker .board {
+  box-shadow:
+    0 0 0 4px #8a5a2b, 0 0 0 13px #5a3618, 0 0 0 15px #c8a24a,
+    0 0 0 17px #3a2210, var(--shadow);
+}
+/* The betting line, drawn inside the felt. */
+/* The felt inside the ring is the same baize as the board, so only the gold
+   betting line and the shading mark the table out. */
+.board-wrap.map-poker .board-centre {
+  position: relative; border-radius: 50%;
+  box-shadow: inset 0 0 0 2px rgba(212, 175, 55, 0.45), inset 0 0 80px rgba(0, 0, 0, 0.42);
+}
+.board-wrap.map-poker .board-centre > * { position: relative; z-index: 1; }
+.board-wrap.map-poker .board-centre::before {
+  content: ''; position: absolute; inset: 6%; border-radius: 50%;
+  border: 1px solid rgba(212, 175, 55, 0.28); pointer-events: none;
+}
+.board-wrap.map-poker .centre-turn,
+.board-wrap.map-poker .centre-card {
+  background: #f8f2e2; border-color: #c8a24a; color: #1d1a14;
+}
+.board-wrap.map-poker .centre-card { border-top-color: #a11d33; }
+.board-wrap.map-poker .centre-card.fortune { border-top-color: #8a6d1f; }
+.board-wrap.map-poker .centre-pot { color: #f0d68a; }
+.board-wrap.map-poker .board-token { border-color: #f7f1e1; }
+.board-wrap.map-poker .die { filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.45)); }
+.board-wrap.map-poker .die rect { fill: #f8f2e2; stroke: #c8a24a; }
+.board-wrap.map-poker .die:first-child .pip { fill: #a11d33; }
+.board-wrap.map-poker .die:last-child .pip { fill: #23272b; }
+.board-wrap.map-poker .dice.empty { color: #cbb98a; }
+
+/* ------------------------------------------------------ pride map (rainbow) */
+/* The frame itself is the spectrum: the board's border is left transparent and
+   the gradient below shows through it, with a soft glow spilling outward. */
+.board-wrap.map-pride .board {
+  border-width: 5px; background-clip: padding-box;
+  box-shadow: 0 0 26px rgba(169, 140, 200, 0.28), var(--shadow);
+}
+.board-wrap.map-pride .board::before {
+  content: ''; position: absolute; inset: -6px; z-index: -1;
+  border-radius: calc(var(--board-radius, 20px) + 6px);
+  background: linear-gradient(105deg, #e07a6f, #efa863, #efd06a, #77b58a, #6a9ad0, #a98cc8);
+  opacity: 0.85;
+}
+/* The four corners carry the flag — the only place the full spectrum lands on
+   a tile, so the ring itself stays warm white. */
+.board-wrap.map-pride .tile.corner {
+  border-color: #ded0e6;
+  background-image: linear-gradient(
+    180deg,
+    rgba(224, 122, 111, 0.55) 0 16.6%, rgba(239, 168, 99, 0.55) 16.6% 33.3%,
+    rgba(239, 208, 106, 0.55) 33.3% 50%, rgba(119, 181, 138, 0.55) 50% 66.6%,
+    rgba(106, 154, 208, 0.55) 66.6% 83.3%, rgba(169, 140, 200, 0.55) 83.3% 100%);
+  background-color: #fffdf9;
+}
+.board-wrap.map-pride .tile.corner .tile-name,
+.board-wrap.map-pride .tile.corner .tile-glyph { text-shadow: 0 1px 2px rgba(255, 253, 249, 0.85); }
+/* A spectrum line where the ring meets the centre: the fill is clipped to the
+   padding box so the gradient underneath shows through the border. */
+.board-wrap.map-pride .board-centre {
+  border: 2px solid transparent;
+  background-image:
+    radial-gradient(ellipse 84% 62% at 50% 138%,
+      transparent 60%, rgba(169, 140, 200, 0.26) 60% 66%, rgba(106, 154, 208, 0.26) 66% 72%,
+      rgba(119, 181, 138, 0.26) 72% 78%, rgba(239, 208, 106, 0.26) 78% 84%,
+      rgba(239, 168, 99, 0.26) 84% 90%, rgba(224, 122, 111, 0.26) 90% 96%,
+      transparent 96%),
+    linear-gradient(160deg, #fffaf4, #fdf6fb),
+    linear-gradient(115deg, #e07a6f, #efa863, #efd06a, #77b58a, #6a9ad0, #a98cc8);
+  background-clip: padding-box, padding-box, border-box;
+  background-origin: padding-box, padding-box, border-box;
+}
+.board-wrap.map-pride .centre-turn,
+.board-wrap.map-pride .centre-card {
+  background: #fffdf9; border-color: #e8dced; color: #2c2733;
+}
+.board-wrap.map-pride .centre-card { border-top-color: #6a9ad0; }
+.board-wrap.map-pride .centre-card.fortune { border-top-color: #efa863; }
+.board-wrap.map-pride .centre-pot { color: #b1633a; }
+.board-wrap.map-pride .die { filter: drop-shadow(0 3px 6px rgba(169, 140, 200, 0.35)); }
+.board-wrap.map-pride .die rect { fill: #fffdf9; stroke: #e0d2e8; }
+.board-wrap.map-pride .die:first-child .pip { fill: #e07a6f; }
+.board-wrap.map-pride .die:last-child .pip { fill: #6a9ad0; }
+
 /* -------------------------------------------------- animated token layer */
-.token-layer { position: absolute; inset: 10px; z-index: 5; pointer-events: none; }
+.token-layer { position: absolute; inset: var(--board-pad, 10px); z-index: 5; pointer-events: none; }
 .board-token {
   position: absolute;
   width: clamp(17px, 1.8vw, 27px); height: clamp(17px, 1.8vw, 27px);
@@ -438,12 +596,50 @@ p { margin: 0 0 10px; }
 .deed-item-owner .accent { color: var(--accent-ink); font-weight: 750; }
 
 /* ============================================================ action bar */
+/* The bar is drawn as two masked layers — an outline and a fill 2px inside it
+   — so a notch can be cut out of its top edge and still come out bordered.
+   `--notch-w` (half the cut's width) is measured from the board in GameRoom;
+   at 0 the mask is a no-op and the bar is an ordinary rounded box. */
 .actionbar {
-  background: var(--surface); border: 2px solid var(--line);
-  border-radius: var(--radius); padding: 12px 18px;
-  display: flex; align-items: center; gap: 16px; flex-wrap: wrap; box-shadow: var(--shadow-sm);
+  --notch-d: 18px;
+  position: relative;
+  margin-top: calc(-1 * var(--notch-d));
+  padding: calc(12px + var(--notch-d)) 18px 12px;
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
 }
-.actionbar.mine { border-color: var(--accent); background: var(--accent-soft); }
+.actionbar > * { position: relative; z-index: 1; }
+.actionbar::before, .actionbar::after {
+  content: ''; position: absolute; z-index: 0; pointer-events: none;
+  -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+  -webkit-mask-position: 0 0, 0 100%; mask-position: 0 0, 0 100%;
+  -webkit-mask-size: 100% var(--notch-d), 100% calc(100% - var(--notch-d));
+  mask-size: 100% var(--notch-d), 100% calc(100% - var(--notch-d));
+}
+.actionbar::before {
+  inset: 0; border-radius: var(--radius); background: var(--line);
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.28));
+  -webkit-mask-image:
+    linear-gradient(to right, #000 calc(50% - var(--notch-w, 0px)),
+      transparent calc(50% - var(--notch-w, 0px)) calc(50% + var(--notch-w, 0px)), #000 calc(50% + var(--notch-w, 0px))),
+    linear-gradient(#000 0 0);
+  mask-image:
+    linear-gradient(to right, #000 calc(50% - var(--notch-w, 0px)),
+      transparent calc(50% - var(--notch-w, 0px)) calc(50% + var(--notch-w, 0px)), #000 calc(50% + var(--notch-w, 0px))),
+    linear-gradient(#000 0 0);
+}
+.actionbar::after {
+  inset: 2px; border-radius: calc(var(--radius) - 2px); background: var(--surface);
+  -webkit-mask-image:
+    linear-gradient(to right, #000 calc(50% - var(--notch-w, 0px) - 2px),
+      transparent calc(50% - var(--notch-w, 0px) - 2px) calc(50% + var(--notch-w, 0px) + 2px), #000 calc(50% + var(--notch-w, 0px) + 2px)),
+    linear-gradient(#000 0 0);
+  mask-image:
+    linear-gradient(to right, #000 calc(50% - var(--notch-w, 0px) - 2px),
+      transparent calc(50% - var(--notch-w, 0px) - 2px) calc(50% + var(--notch-w, 0px) + 2px), #000 calc(50% + var(--notch-w, 0px) + 2px)),
+    linear-gradient(#000 0 0);
+}
+.actionbar.mine::before { background: var(--accent); }
+.actionbar.mine::after { background: var(--accent-soft); }
 .actionbar-status { display: flex; align-items: center; gap: 12px; }
 .status-text { font-weight: 800; font-size: 17px; }
 .timer {
@@ -656,7 +852,11 @@ code {
   .game { height: auto; }
   .game-main { grid-template-columns: 1fr; }
   .col { overflow: visible; }
+  /* Stacked layout: the column has no fixed height, so size the board from the
+     viewport again and drop the notch. */
+  .board-wrap { container-type: normal; }
   .board { width: min(96vw, 660px); }
+  .actionbar { --notch-w: 0px; --notch-d: 0px; padding-top: 12px; margin-top: 0; }
 }
 @media (max-width: 560px) {
   .stat-grid { grid-template-columns: 1fr; }

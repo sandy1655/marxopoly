@@ -136,6 +136,37 @@ corners, and seven card tiles.
 - The **Holding Yard** detains you: roll doubles, pay the fine, or spend a reprieve card. After
   three failed attempts you pay and move.
 
+## Maps (board skins)
+
+Every player picks a **map** for themselves from the dropdown in the lobby and the game header.
+It is a purely visual choice — tile geometry, colours and the centre panel — stored in that
+browser only and never sent to the server, so players at one table can each use a different map.
+The shared tile data (names, prices, rent, cards) is the same for everyone regardless of map.
+
+Bundled maps:
+
+| Map | Look |
+| --- | --- |
+| **Standard** | The classic board: light tiles on a dark table. |
+| **Cyber** | A four-shade LCD panel in the spirit of an old handheld: pixel edges, monospaced type, scanlines. |
+| **Poker Table** | Cream, gold-edged cards on green baize inside a mahogany rail; the card decks take the suit colours. |
+| **Pride** | Warm white board: spectrum frame, flag stripes on the four corners, a soft rainbow over the centre. |
+| **Dummy** | A deliberately ugly test skin. |
+
+Maps live in `packages/client/src/maps/`. To add one, drop a file that exports a `MapDefinition`
+(`id`, `name`, a `layout` — usually `ringLayout(...)` — a set of CSS-variable overrides, and the
+special-tile styles) and list it in the `MAPS` array in `index.ts`. `standard.ts` is a fully
+spelled-out template; `dummy.ts` is a deliberately ugly test skin. A map that needs more than the
+CSS variables can set `wrapClass` and add rules under that class in `styles/index.css`.
+
+If a skin paints outside the board's border box — a bezel, a table rail, a glow — declare how far
+in `--board-ring`. The board shrinks by that much so the ring stays inside the layout, and the
+action bar's notch (measured from the board in `GameRoom.tsx`) is cut wide enough to clear it.
+
+Every skin is drawn with CSS gradients and unicode glyphs only — no bundled images or fonts, so
+there is nothing to license. Keep it that way, and never draw tile names into a skin: they are
+host-editable at runtime and always come from the shared tile data.
+
 ## How the engine works
 
 ```ts
@@ -183,7 +214,8 @@ packages/
     bot.ts               heuristic bot policy
   client/src/
     net.ts               socket client + store
-    lib.ts               formatting and board geometry
+    lib.ts               formatting and board helpers
+    maps/                board skins (layout + colours), one file per map
     components/          board, panels, modals
 ```
 

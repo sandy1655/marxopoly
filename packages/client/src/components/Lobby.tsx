@@ -3,6 +3,7 @@ import { addBot, kickPlayer, leaveRoom, send, updateSettings, useStore } from '.
 import type { GameSettings } from '@marxopoly/shared';
 import { playerIcon } from '../lib.js';
 import CardsPanel from './CardsPanel.js';
+import MapPicker from './MapPicker.js';
 
 const TOGGLES: { key: keyof GameSettings; label: string; hint: string }[] = [
   { key: 'auctionsEnabled', label: 'Auctions', hint: 'Declined properties go under the hammer.' },
@@ -40,6 +41,7 @@ export default function Lobby() {
           </p>
         </div>
         <div className="row">
+          <MapPicker />
           <button className="btn ghost" onClick={() => setShowCards(true)}>
             {isHost ? 'Customise' : 'View cards'}
           </button>

@@ -1,30 +1,23 @@
 import { type Deed, type GameState, type Tile } from '@marxopoly/shared';
-import { gridPosition, money, tileColor, tileEdge } from '../lib.js';
+import { money, tileColor } from '../lib.js';
+import type { BoardLayout, SpecialTileStyle } from '../maps/index.js';
 
 interface Props {
   tile: Tile;
   state: GameState;
+  layout: BoardLayout;
+  /** Per-map colours + glyphs for the non-ownable tile kinds. */
+  special: Record<string, SpecialTileStyle>;
   onSelect: (tileId: number) => void;
   selected: boolean;
 }
 
-/** Corner and event tiles get their own colour so the board reads at a glance. */
-const SPECIAL: Record<string, { bg: string; glyph: string; label?: string }> = {
-  start: { bg: '#22c55e', glyph: '➜', label: 'GO' },
-  holding: { bg: '#f59e0b', glyph: '⏸', label: 'HOLD' },
-  plaza: { bg: '#38bdf8', glyph: '★', label: 'PLAZA' },
-  dispatch: { bg: '#ef4444', glyph: '⚑', label: 'GO TO HOLD' },
-  fortune: { bg: '#fde68a', glyph: '?' },
-  ledger: { bg: '#bfdbfe', glyph: '✎' },
-  tax: { bg: '#e2e8f0', glyph: '⛃' },
-};
-
-export default function BoardTile({ tile, state, onSelect, selected }: Props) {
+export default function BoardTile({ tile, state, layout, special: specialMap, onSelect, selected }: Props) {
   const deed: Deed | undefined = state.deeds[tile.id];
   const owner = deed?.ownerId ? state.players.find((p) => p.id === deed.ownerId) : null;
-  const edge = tileEdge(tile.id);
+  const edge = layout.edge(tile.id);
   const ownable = tile.kind === 'street' || tile.kind === 'depot' || tile.kind === 'works';
-  const special = SPECIAL[tile.kind];
+  const special = specialMap[tile.kind];
   const isCorner = edge === 'corner';
   const custom = state.tileNames[tile.id];
   const label = isCorner
@@ -47,7 +40,7 @@ export default function BoardTile({ tile, state, onSelect, selected }: Props) {
       type="button"
       className={classes}
       style={{
-        ...gridPosition(tile.id),
+        ...layout.position(tile.id),
         ...(isCorner || !ownable ? { '--tile-bg': special?.bg ?? '#f1f5f9' } : null),
       } as React.CSSProperties}
       onClick={() => ownable && onSelect(tile.id)}

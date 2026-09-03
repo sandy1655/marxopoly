@@ -3,13 +3,6 @@ export declare function money(value: number): string;
 /** Compact money for tight spots like chart axes: $0, $850, $1.2k, $3.4M. */
 export declare function compactMoney(value: number): string;
 export declare function tileColor(tile: Tile): string | null;
-/** CSS grid placement for tile `id` on the 11x11 ring. */
-export declare function gridPosition(id: number): {
-    gridRow: number;
-    gridColumn: number;
-};
-export type Edge = 'bottom' | 'left' | 'top' | 'right' | 'corner';
-export declare function tileEdge(id: number): Edge;
 export declare function playersOn(state: GameState, tileId: number): Player[];
 export declare function phaseLabel(state: GameState, myId: string | null): string;
 export declare function secondsLeft(deadline: number | null): number | null;
@@ -22,21 +15,6 @@ export declare function playerIcon(player: {
     token: string;
     name: string;
 }): string;
-/**
- * Centre of tile `id`'s cell as a percentage of the board box, for the
- * absolutely-positioned token layer. The ring has 11 tracks sized
- * 1.5fr / 9× 1fr / 1.5fr, so 12 units across.
- */
-export declare function tileCentre(id: number): {
-    x: number;
-    y: number;
-};
-/** Where a player's piece rests on tile `id`: nudged toward the tile's outer
- *  edge so it sits clear of the street name rather than covering it. */
-export declare function tokenSpot(id: number): {
-    x: number;
-    y: number;
-};
 /** Plain-English summary of a card's effect, derived from the effect object so
  *  new cards describe themselves. Pass `tileNames` for the host's renames. */
 export declare function describeCardEffect(effect: CardEffect, tileNames?: Record<number, string>): string;

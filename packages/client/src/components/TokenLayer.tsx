@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import type { GameState } from '@marxopoly/shared';
-import { playerIcon, tokenSpot } from '../lib.js';
+import { playerIcon } from '../lib.js';
+import { tokenSpot, type BoardLayout } from '../maps/index.js';
 
 interface Props {
   state: GameState;
+  layout: BoardLayout;
 }
 
 const RING = 40;
@@ -16,7 +18,7 @@ const ROLL_SETTLE_MS = 720;
  * when a player's position changes, instead of jumping. A move that follows a
  * dice roll waits for the dice animation to finish before the piece sets off.
  */
-export default function TokenLayer({ state }: Props) {
+export default function TokenLayer({ state, layout }: Props) {
   const active = state.players.filter((p) => !p.bankrupt);
   const turnPlayerId = state.players.find((p) => p.seat === state.turnSeat)?.id;
 
@@ -113,7 +115,7 @@ export default function TokenLayer({ state }: Props) {
     <div className="token-layer" aria-hidden="true">
       {active.map((p) => {
         const tile = shown[p.id] ?? p.position;
-        const { x, y } = tokenSpot(tile);
+        const { x, y } = tokenSpot(layout, tile);
         const group = stack[tile] ?? [p.id];
         const offset = (group.indexOf(p.id) - (group.length - 1) / 2) * 14;
         const walking = !!walkingIds[p.id];
